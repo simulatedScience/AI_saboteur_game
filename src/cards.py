@@ -1,54 +1,59 @@
-# cards.py
 """
-Module for defining card objects for the Saboteur game.
+Module for defining card objects and random card generation functions for the Saboteur game.
 """
-import random
-from typing import Optional
 
+# Standard library imports
+import random
+import itertools
+
+# Local imports
 from .config import GUI_CONFIG
 
 class Card:
     """
     Represents a Saboteur card.
-    
+
     Attributes:
         type (str): 'start', 'path', 'dead-end', or 'goal'
-        x (Optional[int]): Board x-coordinate (if placed)
-        y (Optional[int]): Board y-coordinate (if placed)
-        edges (dict[str, str]): A mapping for edges (keys: 'top', 'right', 'bottom', 'left').
-                                 Each value is one of: 'path', 'dead-end', or 'wall'.
-        connections (list[tuple[str, str]]): list of connections between edges.
-        goal_type (Optional[str]): For goal cards: either 'gold' or 'coal'.
+        x (int | None): Board x-coordinate (if placed)
+        y (int | None): Board y-coordinate (if placed)
+        edges (dict[str, str]): Mapping for edges (keys: 'top', 'right', 'bottom', 'left').
+            Each value is one of: 'path', 'dead-end', or 'wall'.
+        connections (list[tuple[str, str]]): List of connections between edges.
+        goal_type (str | None): For goal cards, either 'gold' or 'coal'.
         rotation (int): Either 0 or 180.
         hidden (bool): For goal cards, whether the card is face down.
-        selected (bool): For cards in-hand, whether this card is selected.
+        selected (bool): For in-hand cards, whether this card is selected.
     """
     def __init__(
-        self,
-        card_type: str,
-        x: Optional[int] = None,
-        y: Optional[int] = None,
-        edges: Optional[dict[str, str]] = None,
-        connections: Optional[list[tuple[str, str]]] = None,
-        goal_type: Optional[str] = None
-    ) -> None:
+            self,
+            card_type: str,
+            x: int | None = None,
+            y: int | None = None,
+            edges: dict[str, str] | None = None,
+            connections: list[tuple[str, str]] | None = None,
+            goal_type: str | None = None
+        ) -> None:
+
         self.type: str = card_type
-        self.x: Optional[int] = x
-        self.y: Optional[int] = y
+        self.x: int | None = x
+        self.y: int | None = y
         self.edges: dict[str, str] = edges if edges is not None else get_random_edges()
-        self.connections: list[tuple[str, str]] = connections if connections is not None else []
-        self.goal_type: Optional[str] = goal_type
+        self.connections: list[tuple[str, str]] = connections if connections is not None else calculate_connections(self.edges)
+        self.goal_type: str | None = goal_type
         self.rotation: int = 0  # 0 or 180
         self.hidden: bool = False  # For goal cards
-        self.selected: bool = False  # For in-hand cards
+        self.selected: bool = False  # For cards in hand
+        # Optional: store the pixel position for cards in hand (set by the GUI)
+        self.hand_pos: tuple[int, int] | None = None
 
         # Validate: if any edge is 'path', then there must be at least a second path.
-        path_count: int = sum(1 for v in self.edges.values() if v == 'path')
-        if 0 < path_count < 2:
+        n_paths: int = sum(1 for v in self.edges.values() if v == 'path')
+        if 0 < n_paths < 2:
             raise ValueError("Invalid card: if any edge is 'path', there must be at least two.")
 
     def __str__(self) -> str:
-        return f"Card({self.type}) at ({self.x},{self.y})"
+        return f"Card({self.type}) at ({self.x}, {self.y})"
 
     def rotate(self) -> None:
         """
@@ -86,18 +91,38 @@ class Card:
             return 'left'
         return edge
 
-
 def get_random_edges() -> dict[str, str]:
     """
     Return a random, valid edge configuration for a card.
+
+    A valid configuration is one where either there are no 'path' edges,
+    or at least two edges are 'path'.
     """
     while True:
-        candidate_edges = {
+        candidate_edges: dict[str, str] = {
             'top': random.choice(['path', 'wall', 'dead-end']),
             'right': random.choice(['path', 'wall', 'dead-end']),
             'bottom': random.choice(['path', 'wall', 'dead-end']),
             'left': random.choice(['path', 'wall', 'dead-end'])
         }
-        n_paths = sum(1 for v in candidate_edges.values() if v == 'path')
+        n_paths: int = sum(1 for v in candidate_edges.values() if v == 'path')
         if n_paths == 0 or n_paths >= 2:
             return candidate_edges
+
+def calculate_connections(edges: dict[str, str]) -> list[tuple[str, str]]:
+    """
+    Calculate connections for a card based on its edges.
+    For every pair of edges that are 'path', assume they are connected.
+
+    Args:
+        edges (dict[str, str]): The edge configuration.
+
+    Returns:
+        list[tuple[str, str]]: List of connections (each as a tuple of edge names).
+    """
+    path_edges: list[str] = [edge for edge, etype in edges.items() if etype == 'path']
+    connections: list[tuple[str, str]] = []
+    # Connect each pair (unique combinations)
+    for a, b in itertools.combinations(path_edges, 2):
+        connections.append((a, b))
+    return connections

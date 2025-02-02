@@ -1,4 +1,3 @@
-# saboteur_env.py
 """
 Gymnasium environment for the Saboteur card game.
 Creates an almost empty board with four cards:
@@ -7,30 +6,34 @@ Creates an almost empty board with four cards:
 Also maintains a placeholder for a path connectivity graph.
 """
 
+# Standard library imports
+import random
+
+# Third-party imports
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from typing import Tuple, Dict
+
+# Local imports
 from .config import CONFIG
 from .cards import Card
-import random
 
 class SaboteurEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, num_players: int = None) -> None:
+    def __init__(self, num_players: int | None = None) -> None:
         """
         Initialize the Saboteur environment.
-        
+
         Args:
-            num_players (Optional[int]): Number of players (default from CONFIG).
+            num_players (int | None): Number of players (default from CONFIG).
         """
         super().__init__()
         self.num_players: int = num_players if num_players is not None else CONFIG['numPlayers']
         # Represent the board as a dictionary mapping (x, y) coordinates to Cards.
-        self.board: Dict[Tuple[int, int], Card] = {}
+        self.board: dict[tuple[int, int], Card] = {}
         # Placeholder for a graph structure to track built paths.
-        self.path_graph: Dict[Tuple[int, int], Dict[str, str]] = {}
+        self.path_graph: dict[tuple[int, int], dict[str, str]] = {}
         self._create_initial_board()
         # Dummy action and observation spaces.
         self.action_space = spaces.Discrete(10)
@@ -42,15 +45,13 @@ class SaboteurEnv(gym.Env):
     def _create_initial_board(self) -> None:
         """
         Create an almost empty board with only four cards:
-            - A 4-way start tile at (0, 0)
-            - Three goal cards at (8, 0), (8, 2), and (8, -2)
+          - A 4-way start tile at (0, 0)
+          - Three goal cards at (8, 0), (8, 2), and (8, -2)
         """
         # Create the start tile at (0, 0): all edges are 'path'.
         start_edges = {'top': 'path', 'right': 'path', 'bottom': 'path', 'left': 'path'}
-        start_connections = [
-            ('top', 'right'), ('top', 'bottom'), ('top', 'left'),
-            ('right', 'bottom'), ('right', 'left'), ('bottom', 'left')
-        ]
+        start_connections = [('top', 'right'), ('top', 'bottom'), ('top', 'left'),
+                             ('right', 'bottom'), ('right', 'left'), ('bottom', 'left')]
         start_card = Card('start', x=0, y=0, edges=start_edges, connections=start_connections)
         self.board[(0, 0)] = start_card
         self.path_graph[(0, 0)] = start_card.edges  # (Placeholder)
@@ -66,9 +67,12 @@ class SaboteurEnv(gym.Env):
             goal_card.hidden = True
             self.board[pos] = goal_card
 
-    def reset(self) -> Tuple[np.ndarray, dict]:
+    def reset(self) -> tuple[np.ndarray, dict]:
         """
         Reset the environment and return a dummy observation.
+
+        Returns:
+            tuple[np.ndarray, dict]: Dummy observation and info dict.
         """
         self.board = {}
         self.path_graph = {}
@@ -78,15 +82,15 @@ class SaboteurEnv(gym.Env):
         self.info = {}
         return self._get_obs(), {}
 
-    def step(self, action: int) -> Tuple[np.ndarray, int, bool, bool, dict]:
+    def step(self, action: int) -> tuple[np.ndarray, int, bool, bool, dict]:
         """
         Process an action (placeholder) and update the game state.
-        
+
         Args:
             action (int): The action to process.
-        
+
         Returns:
-            A tuple of (observation, reward, done, truncated, info).
+            tuple[np.ndarray, int, bool, bool, dict]: (observation, reward, done, truncated, info)
         """
         reward: int = 0
         self.current_player = (self.current_player + 1) % self.num_players
@@ -95,6 +99,9 @@ class SaboteurEnv(gym.Env):
     def _get_obs(self) -> np.ndarray:
         """
         Return a dummy observation.
+
+        Returns:
+            np.ndarray: Dummy observation.
         """
         return np.array([0])
 

@@ -5,15 +5,19 @@ GUI_CONFIG = {
     'card_height': 120,
     'card_margin': 10,
     'path_width': 20,
+    'selection_width': 5,
+    # Font
+    'font': 'Roboto',
     # Colors (use softer, less bold shades)
-    'color_start': "#ccbb88",        # soft blue
-    'color_goal_hidden': "#666666",    # light gray
-    'color_goal_gold': "#ddbb00",      # gold
-    'color_goal_coal': "#222222",      # almost black
-    'color_wall': "#444444",           # dark gray
-    'color_path': "#eeddaa",           # light green
-    'color_dead-end': "#eeddaa",       # light pink
-    'color_hand': "#777777",           # light gray
+    'color_start': "#ccbb88",             # light brown
+    'color_goal_hidden': "#999999",       # medium gray
+    'color_goal_gold': "#ddbb00",         # gold
+    'color_goal_coal': "#222222",         # almost black
+    'color_wall': "#444444",              # dark gray
+    'color_path': "#eeddaa",              # dark beige
+    'color_dead-end': "#eeddaa",          # dark beige
+    'color_hand': "#777777",              # light gray
+    'color_selection_outline': "#5588ff", # blue
 }
 
 CONFIG = {

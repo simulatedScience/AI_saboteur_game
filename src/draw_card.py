@@ -1,50 +1,116 @@
-# draw_card.py
 """
-This module implements functions to draw saboteur cards to a tkinter GUI.
+This module implements functions to draw Saboteur cards to a tkinter GUI.
 """
-# standard library imports
-import tkinter as tk
-# third-party imports
 
-# local imports
+# Standard library imports
+import tkinter as tk
+
+# Third-party imports
+
+# Local imports
 from .cards import Card
 from .config import GUI_CONFIG
 
-def draw_card(card: Card, parent_widget: tk.Widget) -> tk.Canvas:
+def draw_card(card: Card, parent_widget: tk.Widget, click_callback: callable = None) -> tk.Canvas:
     """
     Draw a given card onto the parent widget.
-    Use pen to draw the card's path onto a wall-colored background.
+    Uses drawing primitives to render the card's path onto a wall-colored background.
+    For goal cards that are hidden, draws a blank (back) with no markings.
 
     Args:
-        card (Card): card to draw
-        parent_widget (tk.Widget): parent widget to draw the card onto
+        card (Card): Card to draw.
+        parent_widget (tk.Widget): Parent widget to draw the card onto.
+        click_callback (callable): Callback function for mouse clicks on the card.
 
     Returns:
-        tk.Canvas: canvas with the card drawn. Still needs to be placed.
+        tk.Canvas: Canvas with the card drawn (to be placed later).
     """
-    # create base card
+    # For goal cards that are hidden, return a blank canvas.
+    if card.type == "goal" and card.hidden:
+        card_canvas: tk.Canvas = draw_goal_card(
+            card=card,
+            parent_widget=parent_widget,
+            click_callback=click_callback,
+        )
+        return card_canvas
+
+    # elif card.type in ("path", "start"):
+    card_canvas: tk.Canvas = draw_path_card(
+        card=card,
+        parent_widget=parent_widget,
+        click_callback=click_callback,
+    )
+    return card_canvas
+
+def draw_goal_card(
+            card: Card,
+            parent_widget: tk.Widget,
+            click_callback: callable = None,
+        ) -> tk.Canvas:
+    """
+    Draw a goal card onto the parent widget.
+    This function draws a blank card with a question mark on it.
+
+    Args:
+        card (Card): Card to draw.
+        parent_widget (tk.Widget): Parent widget to draw the card onto.
+        click_callback (callable): Callback function for mouse clicks on the card.
+
+    Returns:
+        tk.Canvas: Canvas with the card drawn (to be placed later).
+    """
     card_canvas: tk.Canvas = tk.Canvas(
+            parent_widget,
+            width=GUI_CONFIG['card_width'],
+            height=GUI_CONFIG['card_height'],
+            bg=GUI_CONFIG['color_wall']
+        )
+        # add question mark on card
+    card_canvas.create_text(
+            GUI_CONFIG['card_width'] / 2,
+            GUI_CONFIG['card_height'] / 2,
+            text="?",
+            font=(GUI_CONFIG['font'], 24, "bold"),
+            fill=GUI_CONFIG['color_goal_hidden']
+        )
+    card_canvas.bind("<Button-1>", click_callback)
+    return card_canvas
+
+def draw_path_card(
+            card: Card,
+            parent_widget: tk.Widget,
+            click_callback: callable = None
+        ) -> tk.Canvas:
+    """
+    Draw a path card onto the parent widget.
+    This function draws the card's path and dead-end edges onto a wall-colored background.
+    
+    Args:
+        card (Card): Card to draw.
+        parent_widget (tk.Widget): Parent widget to draw the card onto.
+        click_callback (callable): Callback function for mouse clicks on the card.
+        
+    Returns:
+        tk.Canvas: Canvas with the card drawn (to be placed later).
+    """
+    # Create path card
+    card_canvas = tk.Canvas(
         parent_widget,
         width=GUI_CONFIG['card_width'],
         height=GUI_CONFIG['card_height'],
         bg=GUI_CONFIG['color_wall']
     )
-    # draw paths:
-    # if a path exists, draw a point in the middle of the card and connect it to all path-edges.
-    # for each dead-end edge, draw a point at the edge's center.
-    # consider rotation of the card.
-    
-    # preliminary calculations
+    card_canvas.bind("<Button-1>", click_callback)
+
+    # Preliminary calculations for edge centers.
     edge_centers: dict[str, tuple[int, int]] = {
-        'top': (GUI_CONFIG['card_width'] / 2, 0),
-        'right': (GUI_CONFIG['card_width'], GUI_CONFIG['card_height'] / 2),
-        'bottom': (GUI_CONFIG['card_width'] / 2, GUI_CONFIG['card_height']),
-        'left': (0, GUI_CONFIG['card_height'] / 2)
+        'top': (GUI_CONFIG['card_width'] // 2, 0),
+        'right': (GUI_CONFIG['card_width'], GUI_CONFIG['card_height'] // 2),
+        'bottom': (GUI_CONFIG['card_width'] // 2, GUI_CONFIG['card_height']),
+        'left': (0, GUI_CONFIG['card_height'] // 2)
     }
-    
-    # draw paths
+    # Draw paths: if any edge is a path, draw a central point and connect it to each "path" edge.
     if "path" in card.edges.values():
-        # draw center point with path color and width
         card_canvas.create_oval(
             GUI_CONFIG['card_width'] / 2 - GUI_CONFIG['path_width'] / 2,
             GUI_CONFIG['card_height'] / 2 - GUI_CONFIG['path_width'] / 2,
@@ -53,10 +119,9 @@ def draw_card(card: Card, parent_widget: tk.Widget) -> tk.Canvas:
             fill=GUI_CONFIG['color_path'],
             outline=GUI_CONFIG['color_path']
         )
-        # draw lines to path-edges
+        # Draw lines from the center to each path edge.
         for edge, edge_type in card.edges.items():
             if edge_type == "path":
-                # draw line from center to edge
                 edge_center = edge_centers[edge]
                 card_canvas.create_line(
                     GUI_CONFIG['card_width'] / 2,
@@ -66,10 +131,9 @@ def draw_card(card: Card, parent_widget: tk.Widget) -> tk.Canvas:
                     fill=GUI_CONFIG['color_path'],
                     width=GUI_CONFIG['path_width']
                 )
-    # draw dead-ends
+    # Draw dead-ends: for each dead-end edge, draw a small circle at that edge's center.
     for edge, edge_type in card.edges.items():
         if edge_type == "dead-end":
-            # draw point at edge center
             edge_center = edge_centers[edge]
             card_canvas.create_oval(
                 edge_center[0] - GUI_CONFIG['path_width'] / 2,
@@ -79,5 +143,4 @@ def draw_card(card: Card, parent_widget: tk.Widget) -> tk.Canvas:
                 fill=GUI_CONFIG['color_dead-end'],
                 outline=GUI_CONFIG['color_dead-end']
             )
-
     return card_canvas
