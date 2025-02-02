@@ -49,10 +49,13 @@ class SaboteurEnv(gym.Env):
           - Three goal cards at (8, 0), (8, 2), and (8, -2)
         """
         # Create the start tile at (0, 0): all edges are 'path'.
-        start_edges = {'top': 'path', 'right': 'path', 'bottom': 'path', 'left': 'path'}
-        start_connections = [('top', 'right'), ('top', 'bottom'), ('top', 'left'),
-                             ('right', 'bottom'), ('right', 'left'), ('bottom', 'left')]
-        start_card = Card('start', x=0, y=0, edges=start_edges, connections=start_connections)
+        start_edges = {
+            'top': 'path',
+            'right': 'path',
+            'bottom': 'path',
+            'left': 'path'
+        }
+        start_card = Card('start', x=0, y=0, edges=start_edges)
         self.board[(0, 0)] = start_card
         self.path_graph[(0, 0)] = start_card.edges  # (Placeholder)
 
