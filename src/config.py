@@ -22,8 +22,6 @@ GUI_CONFIG = {
 }
 
 CONFIG = {
-    'board_cols': 8,
-    'board_rows': 5,
     'num_players': 4,  # default number of players
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
