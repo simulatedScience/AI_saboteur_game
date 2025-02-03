@@ -126,7 +126,17 @@ def calculate_connections(edges: dict[str, str]) -> list[tuple[str, str]]:
     connections: list[tuple[str, str]] = []
     # Connect each pair (unique combinations)
     for a, b in itertools.combinations(path_edges, 2):
-        connections.append((a, b))
+        if a < b:
+            connections.append((a, b))
+        else:
+            connections.append((b, a))
+    if "dead-end" in edges.values():
+        print("Connections for card:")
+        for edge, edge_type in edges.items():
+            print(f"{edge}: {edge_type}")
+        print("Connections:")
+        for conn in connections:
+            print(conn)
     return connections
 
 def load_deck(deck_config_path: str) -> list[Card]:

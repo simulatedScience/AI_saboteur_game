@@ -10,6 +10,7 @@ The board is draggable via right-click, and valid placement positions are outlin
 # Standard library imports
 import random
 import tkinter as tk
+from typing import Any
 
 # Third-party imports
 
@@ -23,8 +24,6 @@ from .draw_card import draw_card
 class SaboteurGUI:
     """
     GUI class that renders the game board, player info, and current hand.
-    Implements card selection, rotation, and placement via the environment's step() method.
-    The board is draggable via right-click, and valid placement positions are outlined.
     """
     def __init__(self, env: SaboteurEnv, player_names: list[str] | None = None) -> None:
         self.env: SaboteurEnv = env
@@ -32,19 +31,18 @@ class SaboteurGUI:
         self.root: tk.Tk = tk.Tk()
         self.root.title("Saboteur Card Game")
 
-        # Player names.
         if player_names is None:
             self.player_names: list[str] = [f"Player {i+1}" for i in range(self.env.num_players)]
         else:
             self.player_names = player_names
 
-        # Board offset for dragging.
+        # Board dragging offset.
         self.board_offset_x: int = 0
         self.board_offset_y: int = 0
         self.drag_start_x: int = 0
         self.drag_start_y: int = 0
 
-        # Board extents (will be recalculated in update_board_extents).
+        # Board extents (will be updated in update_board_extents).
         self.min_x: int = 0
         self.max_x: int = 0
         self.min_y: int = 0
@@ -58,11 +56,11 @@ class SaboteurGUI:
         self.canvas: tk.Canvas = tk.Canvas(self.root, width=self.canvas_width, height=self.canvas_height, bg='white')
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        # Selected card (and its index in the current hand).
+        # Selected card and its index in the current hand.
         self.selected_card: Card | None = None
         self.selected_card_index: int | None = None
 
-        # Bind left-click for card selection/placement and right-click for dragging.
+        # Bind left-click for selection/placement and right-click for dragging.
         self.canvas.bind("<Button-1>", self.on_click)
         self.canvas.bind("<ButtonPress-3>", self.on_right_press)
         self.canvas.bind("<B3-Motion>", self.on_right_drag)
@@ -71,8 +69,7 @@ class SaboteurGUI:
 
     def update_board_extents(self) -> None:
         """
-        Update the board extents based on placed cards, leaving one extra cell margin around.
-        Adjust the canvas size accordingly.
+        Update board extents based on placed cards (with one extra cell margin).
         """
         if self.env.board:
             xs: list[int] = [pos[0] for pos in self.env.board.keys()]
@@ -94,7 +91,7 @@ class SaboteurGUI:
 
     def transform(self, pos: tuple[int, int]) -> tuple[int, int]:
         """
-        Convert board coordinates (x, y) to pixel coordinates (taking board offset into account).
+        Convert board coordinates to pixel coordinates (taking board offset into account).
         """
         x, y = pos
         pixel_x: int = GUI_CONFIG['card_margin'] + (x - self.min_x) * (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.board_offset_x
@@ -103,7 +100,7 @@ class SaboteurGUI:
 
     def inverse_transform(self, pixel: tuple[int, int]) -> tuple[int, int]:
         """
-        Convert pixel coordinates back to board coordinates (ignoring board offset).
+        Convert pixel coordinates back to board coordinates.
         """
         x_pixel, y_pixel = pixel
         board_x: int = (x_pixel - GUI_CONFIG['card_margin'] - self.board_offset_x) // (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x
@@ -112,7 +109,7 @@ class SaboteurGUI:
 
     def draw(self) -> None:
         """
-        Redraw the entire canvas: board, valid placement outlines, player info, and hand (or play-again button).
+        Redraw the canvas: board, valid placements, player info, hand, and skip button.
         """
         self.canvas.delete("all")
         self.update_board_extents()
@@ -120,10 +117,11 @@ class SaboteurGUI:
         self.draw_valid_placements()
         self.draw_player_info()
         self.draw_hand()
+        self.draw_skip_button()
 
     def draw_board(self) -> None:
         """
-        Draw all cards placed on the board.
+        Draw all placed cards.
         """
         for pos, card in self.env.board.items():
             pixel_x, pixel_y = self.transform(pos)
@@ -145,7 +143,7 @@ class SaboteurGUI:
 
     def draw_valid_placements(self) -> None:
         """
-        If a card is selected, draw a dashed outline at each board position where the card could be legally placed.
+        If a card is selected, draw an outline at each valid placement location.
         """
         if self.selected_card is None:
             return
@@ -157,14 +155,14 @@ class SaboteurGUI:
                 pixel_y,
                 pixel_x + GUI_CONFIG['card_width'],
                 pixel_y + GUI_CONFIG['card_height'],
-                outline="green",
+                outline=GUI_CONFIG['color_selection_outline'],
                 dash=(4, 2),
                 width=2
             )
 
     def draw_player_info(self) -> None:
         """
-        Draw text showing the current active player.
+        Draw current player info.
         """
         info_text: str = f"Current player: {self.player_names[self.env.current_player]} " \
                            f"({self.env.current_player + 1}/{self.env.num_players})"
@@ -175,7 +173,7 @@ class SaboteurGUI:
     def draw_hand(self) -> None:
         """
         Draw the current player's hand at the bottom of the canvas.
-        If the game is over, display a large "Play Again" button instead.
+        If the game is over, display a Play Again button.
         """
         if self.env.done:
             center_x: float = self.canvas_width / 2
@@ -206,24 +204,45 @@ class SaboteurGUI:
             self.canvas.create_window(start_x, y, window=card_canvas, anchor='nw')
 
             if card.selected:
+                # Compute an offset so that the outline is flush and symmetric.
+                offset: float = GUI_CONFIG['selection_width'] / 2
                 self.canvas.create_rectangle(
-                    start_x,
-                    y,
-                    start_x + GUI_CONFIG['card_width'],
-                    y + GUI_CONFIG['card_height'],
+                    start_x - offset,
+                    y - offset,
+                    start_x + GUI_CONFIG['card_width'] + offset,
+                    y + GUI_CONFIG['card_height'] + offset,
                     outline=GUI_CONFIG['color_selection_outline'],
                     width=GUI_CONFIG['selection_width']
                 )
             start_x += GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']
 
+        # If none of the cards in hand have any legal moves, auto-skip after a short delay.
+        if all(len(self.env.get_valid_placements(c)) == 0 for c in current_hand):
+            self.root.after(1000, self.skip_turn)
+
+    def draw_skip_button(self) -> None:
+        """
+        Draw a Skip Turn button next to the hand.
+        """
+        if self.env.done:
+            return
+        # Place the skip button at the bottom-right of the canvas.
+        btn = tk.Button(
+            self.canvas,
+            text="Skip Turn",
+            font=(GUI_CONFIG['font'], 14),
+            bg="orange",
+            command=self.skip_turn
+        )
+        self.canvas.create_window(self.canvas_width - 80, self.canvas_height - 75, window=btn)
+
     def on_card_click(self, event: tk.Event, card: Card, index: int | None) -> None:
         """
-        Handle click events on a card in the hand or on a goal card on the board.
-        - For a hidden goal card, temporarily reveal it.
-        - For a non-goal card: if already selected, rotate it; otherwise, select it.
+        Handle clicking on a card.
+          - For a hidden goal card, temporarily reveal it.
+          - For a hand card, toggle selection/rotation.
         """
         if card.type == 'goal':
-            # Clicking on a goal card: if hidden, reveal it briefly.
             if card.hidden:
                 card.hidden = False
                 self.draw()
@@ -242,9 +261,8 @@ class SaboteurGUI:
 
     def hide_goal_temporarily(self, card: Card) -> None:
         """
-        After a temporary reveal, hide the goal card again unless it has been uncovered by placement.
+        Hide a goal card after a temporary reveal (unless it has been uncovered permanently).
         """
-        # Only re-hide if the card is not reached via a valid path.
         if not self.env.can_reach((card.x, card.y)):
             card.hidden = True
         self.draw()
@@ -252,7 +270,7 @@ class SaboteurGUI:
     def on_click(self, event: tk.Event) -> None:
         """
         Handle left-clicks on the canvas.
-        If a card is selected from the hand, attempt to place it at the clicked board position.
+        If a hand card is selected, attempt to place it.
         """
         if self.env.done:
             return
@@ -274,14 +292,14 @@ class SaboteurGUI:
 
     def on_right_press(self, event: tk.Event) -> None:
         """
-        Record the starting position for a board drag (right-click).
+        Record starting position for dragging.
         """
         self.drag_start_x = event.x
         self.drag_start_y = event.y
 
     def on_right_drag(self, event: tk.Event) -> None:
         """
-        Update the board offset as the user drags with the right mouse button.
+        Update board offset as user drags.
         """
         dx = event.x - self.drag_start_x
         dy = event.y - self.drag_start_y
@@ -291,10 +309,19 @@ class SaboteurGUI:
         self.drag_start_y = event.y
         self.draw()
 
+    def skip_turn(self) -> None:
+        """
+        Manually skip the current player's turn.
+        """
+        action: tuple[int, tuple[int, int], int] = (-1, (0, 0), 0)
+        self.env.step(action)
+        self.selected_card = None
+        self.selected_card_index = None
+        self.draw()
+
     def play_again(self) -> None:
         """
-        Callback for the Play Again button.
-        Resets the environment and redraws the GUI.
+        Reset the game.
         """
         self.env.reset()
         self.selected_card = None
