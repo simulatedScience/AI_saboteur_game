@@ -4,7 +4,7 @@ GUI_CONFIG = {
     # Card size and margins (in pixels)
     'card_width': 80,
     'card_height': 120,
-    'card_margin': 10,
+    'card_margin': 1,
     'path_width': 20,
     'selection_width': 5,
     # Font
