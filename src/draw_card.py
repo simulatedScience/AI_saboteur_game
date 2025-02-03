@@ -1,3 +1,4 @@
+# draw_card.py
 """
 This module implements functions to draw Saboteur cards to a tkinter GUI.
 """
@@ -26,7 +27,7 @@ def draw_card(card: Card, parent_widget: tk.Widget, click_callback: callable = N
         tk.Canvas: Canvas with the card drawn (to be placed later).
     """
     # For goal cards that are hidden, return a blank canvas.
-    if card.type == "goal" and card.hidden:
+    if card.type == "goal":
         card_canvas: tk.Canvas = draw_goal_card(
             card=card,
             parent_widget=parent_widget,
@@ -59,21 +60,41 @@ def draw_goal_card(
     Returns:
         tk.Canvas: Canvas with the card drawn (to be placed later).
     """
-    card_canvas: tk.Canvas = tk.Canvas(
-            parent_widget,
-            width=GUI_CONFIG['card_width'],
-            height=GUI_CONFIG['card_height'],
-            bg=GUI_CONFIG['color_wall']
+    if card.hidden:
+        card_canvas: tk.Canvas = tk.Canvas(
+                parent_widget,
+                width=GUI_CONFIG['card_width'],
+                height=GUI_CONFIG['card_height'],
+                bg=GUI_CONFIG['color_wall']
+            )
+            # add question mark on card
+        card_canvas.create_text(
+                GUI_CONFIG['card_width'] / 2,
+                GUI_CONFIG['card_height'] / 2,
+                text="?",
+                font=(GUI_CONFIG['font'], 24, "bold"),
+                fill=GUI_CONFIG['color_goal_hidden']
+            )
+        card_canvas.bind("<Button-1>", click_callback)
+    else:
+        card_canvas = draw_path_card(
+            card=card,
+            parent_widget=parent_widget,
+            click_callback=click_callback
         )
-        # add question mark on card
-    card_canvas.create_text(
-            GUI_CONFIG['card_width'] / 2,
-            GUI_CONFIG['card_height'] / 2,
-            text="?",
-            font=(GUI_CONFIG['font'], 24, "bold"),
-            fill=GUI_CONFIG['color_goal_hidden']
+        # draw gold or coal on card
+        is_coal = "wall" in card.edges.values()
+        goal_color = GUI_CONFIG['color_goal_coal'] if is_coal else GUI_CONFIG['color_goal_gold']
+        # draw circle at 0.8 path_width in center
+        resource_size: float = 0.5 * GUI_CONFIG['path_width']
+        card_canvas.create_oval(
+            GUI_CONFIG['card_width'] / 2 - resource_size,
+            GUI_CONFIG['card_height'] / 2 - resource_size,
+            GUI_CONFIG['card_width'] / 2 + resource_size,
+            GUI_CONFIG['card_height'] / 2 + resource_size,
+            fill=goal_color,
+            outline=goal_color
         )
-    card_canvas.bind("<Button-1>", click_callback)
     return card_canvas
 
 def draw_path_card(

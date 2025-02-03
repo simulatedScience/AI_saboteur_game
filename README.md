@@ -8,10 +8,6 @@ Different communication methods between agents can be implemented:
 **(a)** (AI) players can ask other players where the gold is, choose to answer (right, wrong, don't know, refuse answer) (using small NNs trained from scratch for this game)  
 **(b)** A chat the AI agents can use to communicate. (using LLM agents fine tuned via RL to play this game.)
 
-
-
-
-
 ## Milestones
 
 1. implement path cards, dead ends, path card play, distance to gold measurement.

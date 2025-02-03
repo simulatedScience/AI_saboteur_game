@@ -1,3 +1,4 @@
+# cards.py
 """
 Module for defining card objects and random card generation functions for the Saboteur game.
 """
@@ -8,6 +9,7 @@ import itertools
 
 # Local imports
 from .config import GUI_CONFIG
+from .deck_config import load_deck_config
 
 class Card:
     """
@@ -126,3 +128,30 @@ def calculate_connections(edges: dict[str, str]) -> list[tuple[str, str]]:
     for a, b in itertools.combinations(path_edges, 2):
         connections.append((a, b))
     return connections
+
+def load_deck(deck_config_path: str) -> list[Card]:
+    """
+    Load a given deck
+
+    Args:
+        deck_config (list[dict[str, str  |  int  |  dict]]): _description_
+
+    Returns:
+        list[Card]: _description_
+    """
+    deck_config = load_deck_config(deck_config_path)
+    deck: list[Card] = []
+    for card_type in deck_config:
+        # extract card count
+        count: int = card_type.pop('count')
+        for _ in range(count):
+            deck.append(
+                Card(
+                    card_type['type'],
+                    edges=card_type['edges'],
+                    connections=card_type.get('connections', None),
+                    goal_type=None,
+                )
+            )
+    random.shuffle(deck)
+    return deck

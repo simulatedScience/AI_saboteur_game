@@ -1,0 +1,162 @@
+[
+    {
+        "type": "path",
+        "edges": {
+            "top": "path",
+            "right": "path",
+            "bottom": "path",
+            "left": "path"
+        },
+        "count": 5
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "path",
+            "right": "path",
+            "bottom": "path",
+            "left": "wall"
+        },
+        "count": 5
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "path",
+            "right": "path",
+            "bottom": "wall",
+            "left": "path"
+        },
+        "count": 5
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "path",
+            "right": "wall",
+            "bottom": "path",
+            "left": "wall"
+        },
+        "count": 3
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "path",
+            "bottom": "wall",
+            "left": "path"
+        },
+        "count": 4
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "path",
+            "bottom": "path",
+            "left": "wall"
+        },
+        "count": 4
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "wall",
+            "bottom": "path",
+            "left": "path"
+        },
+        "count": 5
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "dead-end",
+            "right": "dead-end",
+            "bottom": "dead-end",
+            "left": "dead-end"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "dead-end",
+            "bottom": "dead-end",
+            "left": "dead-end"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "dead-end",
+            "right": "dead-end",
+            "bottom": "dead-end",
+            "left": "wall"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "dead-end",
+            "right": "wall",
+            "bottom": "dead-end",
+            "left": "wall"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "dead-end",
+            "bottom": "wall",
+            "left": "dead-end"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "dead-end",
+            "bottom": "dead-end",
+            "left": "wall"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "wall",
+            "bottom": "dead-end",
+            "left": "dead-end"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "dead-end",
+            "right": "wall",
+            "bottom": "wall",
+            "left": "wall"
+        },
+        "count": 1
+    },
+    {
+        "type": "path",
+        "edges": {
+            "top": "wall",
+            "right": "dead-end",
+            "bottom": "wall",
+            "left": "wall"
+        },
+        "count": 1
+    }
+]

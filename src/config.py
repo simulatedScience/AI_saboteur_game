@@ -1,3 +1,4 @@
+
 # config.py
 GUI_CONFIG = {
     # Card size and margins (in pixels)
@@ -11,7 +12,7 @@ GUI_CONFIG = {
     # Colors (use softer, less bold shades)
     'color_start': "#ccbb88",             # light brown
     'color_goal_hidden': "#999999",       # medium gray
-    'color_goal_gold': "#ddbb00",         # gold
+    'color_goal_gold': "#ccaa00",         # gold
     'color_goal_coal': "#222222",         # almost black
     'color_wall': "#444444",              # dark gray
     'color_path': "#eeddaa",              # dark beige
@@ -21,9 +22,11 @@ GUI_CONFIG = {
 }
 
 CONFIG = {
-    'boardCols': 8,
-    'boardRows': 5,
-    'numPlayers': 4,  # default number of players
+    'board_cols': 8,
+    'board_rows': 5,
+    'num_players': 4,  # default number of players
+    'hand_size': 6,
+    'deck': 'src/assets/deck_standard.json',
 }
 
 def check_config() -> bool:
@@ -42,7 +45,7 @@ def check_config() -> bool:
         print(f"Invalid configuration: path width must be less than half the card width and height.")
         valid_config = False
 
-    return True
+    return valid_config
 
 assert check_config()
 

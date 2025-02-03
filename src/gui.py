@@ -1,16 +1,15 @@
 """
-GUI for the Saboteur card game.
-Implements drawing of the board and hand using the draw_card module.
-Allows selection, rotation, and placement of in-hand cards.
-Cards can only be placed adjacent to existing cards.
-After placement, the hand is replenished with a new random card.
+Updated GUI to use env.place_card(...) for valid card placement.
+
+We assume the saboteur_env.py now has a method env.place_card(card, (x, y)) -> bool.
+The user can select a card in their hand, click on the board to attempt placement, and if successful, the card is removed from the hand.
 """
 
 # Standard library imports
 import random
+import tkinter as tk
 
 # Third-party imports
-import tkinter as tk
 
 # Local imports
 from .saboteur_env import SaboteurEnv
@@ -22,6 +21,8 @@ class SaboteurGUI:
     """
     GUI class that renders the game board and player hand,
     and implements card selection, rotation, and placement.
+
+    Updated to call env.place_card(...) when the user clicks.
     """
     def __init__(self, env: SaboteurEnv) -> None:
         self.env: SaboteurEnv = env
@@ -46,27 +47,20 @@ class SaboteurGUI:
         self.canvas: tk.Canvas = tk.Canvas(self.root, width=self.canvas_width, height=self.canvas_height, bg='white')
         self.canvas.pack()
 
-        # self.canvas.bind("<Button-1>", self.on_click)
-
-        # Player hand: create a sample set of five random path cards.
+        # create a sample set of five random path cards for the player's hand.
         self.player_hand: list[Card] = []
         for _ in range(5):
             card = Card('path')
             card.rotation = 0
             self.player_hand.append(card)
-        self.selected_card: Card | None = None  # Track the selected card.
+        self.selected_card: Card | None = None
 
+        self.canvas.bind("<Button-1>", self.on_click)
         self.draw()
 
     def transform(self, pos: tuple[int, int]) -> tuple[int, int]:
         """
         Transform board coordinate pos (x, y) to pixel coordinates.
-
-        Args:
-            pos (tuple[int, int]): The board coordinate.
-
-        Returns:
-            tuple[int, int]: The (x, y) pixel coordinate.
         """
         x, y = pos
         pixel_x = GUI_CONFIG['card_margin'] + (x - self.min_x) * (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin'])
@@ -76,16 +70,10 @@ class SaboteurGUI:
     def inverse_transform(self, pixel: tuple[int, int]) -> tuple[int, int]:
         """
         Convert pixel coordinates back to board coordinates.
-
-        Args:
-            pixel (tuple[int, int]): The (x, y) pixel coordinate.
-
-        Returns:
-            tuple[int, int]: The board coordinate.
         """
         x_pixel, y_pixel = pixel
-        board_x = round((x_pixel - GUI_CONFIG['card_margin']) / (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x)
-        board_y = round((y_pixel - GUI_CONFIG['card_margin']) / (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.min_y)
+        board_x = (x_pixel - GUI_CONFIG['card_margin']) // (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x
+        board_y = (y_pixel - GUI_CONFIG['card_margin']) // (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.min_y
         return board_x, board_y
 
     def draw(self) -> None:
@@ -105,7 +93,8 @@ class SaboteurGUI:
             card_canvas = draw_card(
                 card=card,
                 parent_widget=self.canvas,
-                click_callback=self.on_click)
+                click_callback=lambda event, c=card: self.on_card_click(event, c)
+            )
             self.canvas.create_window(pixel_x, pixel_y, window=card_canvas, anchor='nw')
             if card.type == 'goal':
                 if card.hidden:
@@ -133,30 +122,40 @@ class SaboteurGUI:
             card_canvas = draw_card(
                 card=card,
                 parent_widget=self.canvas,
-                click_callback=lambda event, card=card: self.on_card_click(event, card)
+                click_callback=lambda event, c=card: self.on_card_click(event, c)
             )
             self.canvas.create_window(start_x, y, window=card_canvas, anchor='nw')
+
             if card.selected:
+                # highlight the card with a rectangle.
                 self.canvas.create_rectangle(
                     start_x,
                     y,
-                    start_x + GUI_CONFIG['card_width'] + GUI_CONFIG['selection_width'],
-                    y + GUI_CONFIG['card_height'] + GUI_CONFIG['selection_width'],
+                    start_x + GUI_CONFIG['card_width'],
+                    y + GUI_CONFIG['card_height'],
                     outline=GUI_CONFIG['color_selection_outline'],
                     width=GUI_CONFIG['selection_width'],
                 )
+
             start_x += GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']
 
-    def on_card_click(self, event, card):
+    def on_card_click(self, event, card: Card) -> None:
         """
-        Handle click events on a card.
+        Handle click events on a card in the hand.
         If card was already selected, rotate it.
         If not, deselect all other cards and select this one.
-
-        Args:
-            event: The event object containing the click coordinates.
-            card: The card that was clicked.
         """
+        if card.type == 'goal':
+            if card.hidden:
+                # show the goal card for 2 seconds
+                card.hidden = False
+                self.draw()
+                self.root.after(2000, lambda: self.on_card_click(event, card))
+            else:
+                # hide the goal card again
+                card.hidden = True
+                self.draw()
+            return
         if card.selected:
             card.rotate()
         else:
@@ -164,107 +163,24 @@ class SaboteurGUI:
                 other.selected = False
             card.selected = True
             self.selected_card = card
-        self.draw()  # Redraw the canvas to reflect the selection
+        self.draw()
 
-    def on_click(self, event):
+    def on_click(self, event) -> None:
         """
         Handle click events on the canvas.
-
-        Args:
-            event: The event object containing the click coordinates.
+        If we have a selected card and the user clicks on an empty board space, attempt placement.
         """
         click_x, click_y = event.x, event.y
+        board_coord = self.inverse_transform((click_x, click_y))
 
-        # Check if the click is within the bounds of any card in the player's hand
-        for card in self.player_hand:
-            card_x, card_y = self.transform((card.x, card.y))  # Assuming card has a position attribute
-            card_width = GUI_CONFIG['card_width']
-            card_height = GUI_CONFIG['card_height']
-
-            if card_x <= click_x <= card_x + card_width and card_y <= click_y <= card_y + card_height:
-                self.selected_card = card
-                break
-        else:
-            self.selected_card = None  # Deselect if no card is clicked
-
-        self.draw()  # Redraw the canvas to reflect the selection
-
-    def process_hand_click(self, x: int, y: int) -> None:
-        """
-        Process a click in the hand area.
-
-        Args:
-            x (int): x-coordinate of the click.
-            y (int): y-coordinate of the click.
-        """
-        for card in self.player_hand:
-            hx, hy = card.hand_pos  # type: ignore
-            if hx <= x <= hx + GUI_CONFIG['card_width'] and hy <= y <= hy + GUI_CONFIG['card_height']:
-                if card.selected:
-                    card.rotate()
-                else:
-                    for other in self.player_hand:
-                        other.selected = False
-                    card.selected = True
-                    self.selected_card = card
-                self.draw()
-                return
-
-    def is_adjacent(self, board_coord: tuple[int, int]) -> bool:
-        """
-        Check if the given board coordinate is adjacent (cardinally)
-        to any already placed card.
-
-        Args:
-            board_coord (tuple[int, int]): The board coordinate to check.
-
-        Returns:
-            bool: True if adjacent, False otherwise.
-        """
-        x, y = board_coord
-        neighbors = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
-        return any(neighbor in self.env.board for neighbor in neighbors)
-
-    def process_board_click(self, x: int, y: int) -> None:
-        """
-        Process a click in the board area.
-        If the click is on an empty board cell that is adjacent to an existing card and a card is selected, place it.
-
-        Args:
-            x (int): x-coordinate of the click.
-            y (int): y-coordinate of the click.
-        """
-        board_coord = self.inverse_transform((x, y))
-        if board_coord in self.env.board:
-            card = self.env.board[board_coord]
-            if card.type == 'goal' and card.hidden:
-                card.hidden = False
-                self.draw()
-                self.root.after(2000, lambda c=card: self.hide_goal(c))
-            return
-        if not self.is_adjacent(board_coord):
-            # Only allow placement adjacent to an existing card.
-            return
+        # If we have a selected card, try placing it.
         if self.selected_card is not None:
-            self.selected_card.x, self.selected_card.y = board_coord
-            self.env.board[board_coord] = self.selected_card
-            # After placement, remove the card from the hand and add a new random card.
-            self.player_hand.remove(self.selected_card)
-            new_card = Card('path')
-            self.player_hand.append(new_card)
-            self.selected_card.selected = False
-            self.selected_card = None
+            success = self.env.place_card(self.selected_card, board_coord)
+            if success:
+                # remove from hand
+                self.player_hand.remove(self.selected_card)
+                self.selected_card = None
             self.draw()
-
-    def hide_goal(self, card: Card) -> None:
-        """
-        Hide a revealed goal card after 2 seconds.
-
-        Args:
-            card (Card): The goal card to hide.
-        """
-        card.hidden = True
-        self.draw()
 
     def run(self) -> None:
         """
