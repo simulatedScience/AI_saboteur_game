@@ -32,7 +32,7 @@ class SaboteurGUI:
         self.env.reset()
         self.root: tk.Tk = tk.Tk()
         self.root.title("Saboteur Card Game")
-        
+
         # Setup player names and agent types based on CONFIG["AI_TYPES"]
         config_ai_types: list[str] = CONFIG.get("AI_TYPES", [])
         # Pad with "human" if necessary.
@@ -96,8 +96,9 @@ class SaboteurGUI:
 
     def update_board_extents(self) -> None:
         """
-        Update board extents based on placed cards (with one extra cell margin).
+        Update the board extents based on placed cards, applying zoom and limiting the canvas size.
         """
+        zoom: float = GUI_CONFIG.get("zoom", 1.0)
         if self.env.board:
             xs: list[int] = [pos[0] for pos in self.env.board.keys()]
             ys: list[int] = [pos[1] for pos in self.env.board.keys()]
@@ -110,29 +111,35 @@ class SaboteurGUI:
 
         self.board_cols = self.max_x - self.min_x + 1
         self.board_rows = self.max_y - self.min_y + 1
-        new_width: int = GUI_CONFIG['card_margin'] + self.board_cols * (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin'])
-        new_height: int = GUI_CONFIG['card_margin'] + self.board_rows * (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + 150
-        self.canvas_width = new_width
-        self.canvas_height = new_height
-        self.canvas.config(width=new_width, height=new_height)
+        new_width: int = int(GUI_CONFIG['card_margin'] * zoom + self.board_cols * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom))
+        new_height: int = int(GUI_CONFIG['card_margin'] * zoom + self.board_rows * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + 150)
+        max_w: int = GUI_CONFIG.get("max_canvas_width", new_width)
+        max_h: int = GUI_CONFIG.get("max_canvas_height", new_height)
+        self.canvas_width = min(new_width, max_w)
+        self.canvas_height = min(new_height, max_h)
+        self.canvas.config(width=self.canvas_width, height=self.canvas_height)
 
+# Update transform() to use zoom:
     def transform(self, pos: tuple[int, int]) -> tuple[int, int]:
         """
-        Convert board coordinates to pixel coordinates (taking board offset into account).
+        Convert board coordinates to pixel coordinates, applying zoom and board offset.
         """
+        zoom: float = GUI_CONFIG.get("zoom", 1.0)
         x, y = pos
-        pixel_x: int = GUI_CONFIG['card_margin'] + (x - self.min_x) * (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.board_offset_x
-        pixel_y: int = GUI_CONFIG['card_margin'] + (y - self.min_y) * (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.board_offset_y
-        return pixel_x, pixel_y
+        pixel_x: int = int(GUI_CONFIG['card_margin'] * zoom + (x - self.min_x) * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom) + self.board_offset_x)
+        pixel_y: int = int(GUI_CONFIG['card_margin'] * zoom + (y - self.min_y) * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + self.board_offset_y)
+        return (pixel_x, pixel_y)
+
 
     def inverse_transform(self, pixel: tuple[int, int]) -> tuple[int, int]:
         """
         Convert pixel coordinates back to board coordinates.
         """
-        x_pixel, y_pixel = pixel
-        board_x: int = (x_pixel - GUI_CONFIG['card_margin'] - self.board_offset_x) // (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x
-        board_y: int = (y_pixel - GUI_CONFIG['card_margin'] - self.board_offset_y) // (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.min_y
-        return board_x, board_y
+        zoom: float = GUI_CONFIG.get("zoom", 1.0)
+        x, y = pixel
+        x = int((x - GUI_CONFIG['card_margin'] * zoom - self.board_offset_x) / ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom) + self.min_x)
+        y = int((y - GUI_CONFIG['card_margin'] * zoom - self.board_offset_y) / ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + self.min_y)
+        return (x, y)
 
     def draw(self) -> None:
         """
@@ -148,21 +155,33 @@ class SaboteurGUI:
 
     def draw_board(self) -> None:
         """
-        Draw all placed cards.
+        Draw all cards placed on the board.
         """
+        zoom: float = GUI_CONFIG.get("zoom", 1.0)
         for pos, card in self.env.board.items():
             pixel_x, pixel_y = self.transform(pos)
-            card_canvas: tk.Canvas = draw_card(
-                card=card,
-                parent_widget=self.canvas,
-                click_callback=lambda event, c=card: self.on_card_click(event, c, None)
-            )
+            # If it's a goal card and it is uncovered but rotated, temporarily set rotation to 0 for drawing.
+            if card.type == "goal" and not card.hidden and card.rotation != 0:
+                original_rotation: int = card.rotation
+                card.rotation = 0
+                card_canvas = draw_card(
+                    card=card,
+                    parent_widget=self.canvas,
+                    click_callback=lambda event, c=card: self.on_card_click(event, c, None)
+                )
+                card.rotation = original_rotation
+            else:
+                card_canvas = draw_card(
+                    card=card,
+                    parent_widget=self.canvas,
+                    click_callback=lambda event, c=card: self.on_card_click(event, c, None)
+                )
             self.canvas.create_window(pixel_x, pixel_y, window=card_canvas, anchor='nw')
-            if card.type == 'goal' and not card.hidden:
+            if card.type == "goal" and not card.hidden:
                 goal_text: str = card.goal_type.upper() if card.goal_type else "GOLD"
                 self.canvas.create_text(
-                    pixel_x + GUI_CONFIG['card_width'] / 2,
-                    pixel_y + GUI_CONFIG['card_height'] / 2,
+                    pixel_x + int((GUI_CONFIG['card_width'] * zoom) / 2),
+                    pixel_y + int((GUI_CONFIG['card_height'] * zoom) / 2),
                     text=goal_text,
                     fill="black",
                     font=(GUI_CONFIG['font'], 12)
@@ -368,7 +387,7 @@ class SaboteurGUI:
         Start the Tkinter main loop.
         """
         self.root.mainloop()
-    
+
     def check_auto_act(self) -> None:
         """
         If the current player is controlled by an AI, schedule an automatic action.

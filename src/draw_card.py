@@ -12,7 +12,11 @@ import tkinter as tk
 from .cards import Card
 from .config import GUI_CONFIG
 
-def draw_card(card: Card, parent_widget: tk.Widget, click_callback: callable = None) -> tk.Canvas:
+def draw_card(
+        card: Card,
+        parent_widget: tk.Widget,
+        click_callback: callable = None,
+    ) -> tk.Canvas:
     """
     Draw a given card onto the parent widget.
     Uses drawing primitives to render the card's path onto a wall-colored background.
@@ -44,10 +48,10 @@ def draw_card(card: Card, parent_widget: tk.Widget, click_callback: callable = N
     return card_canvas
 
 def draw_goal_card(
-            card: Card,
-            parent_widget: tk.Widget,
-            click_callback: callable = None,
-        ) -> tk.Canvas:
+        card: Card,
+        parent_widget: tk.Widget,
+        click_callback: callable = None,
+    ) -> tk.Canvas:
     """
     Draw a goal card onto the parent widget.
     This function draws a blank card with a question mark on it.
@@ -60,19 +64,24 @@ def draw_goal_card(
     Returns:
         tk.Canvas: Canvas with the card drawn (to be placed later).
     """
+    zoom = GUI_CONFIG['zoom']
+    card_width = GUI_CONFIG['card_width'] * zoom
+    card_height = GUI_CONFIG['card_height'] * zoom
+    path_width = GUI_CONFIG['path_width'] * zoom
+
     if card.hidden:
         card_canvas: tk.Canvas = tk.Canvas(
                 parent_widget,
-                width=GUI_CONFIG['card_width'],
-                height=GUI_CONFIG['card_height'],
+                width=card_width,
+                height=card_height,
                 bg=GUI_CONFIG['color_wall']
             )
             # add question mark on card
         card_canvas.create_text(
-                GUI_CONFIG['card_width'] / 2,
-                GUI_CONFIG['card_height'] / 2,
+                card_width / 2,
+                card_height / 2,
                 text="?",
-                font=(GUI_CONFIG['font'], 24, "bold"),
+                font=(GUI_CONFIG['font'], int(24 * zoom), "bold"),
                 fill=GUI_CONFIG['color_goal_hidden']
             )
         card_canvas.bind("<Button-1>", click_callback)
@@ -83,15 +92,15 @@ def draw_goal_card(
             click_callback=click_callback
         )
         # draw gold or coal on card
-        is_coal = "wall" in card.edges.values()
+        is_coal: bool = card.goal_type == "coal"
         goal_color = GUI_CONFIG['color_goal_coal'] if is_coal else GUI_CONFIG['color_goal_gold']
         # draw circle at 0.8 path_width in center
-        resource_size: float = 0.5 * GUI_CONFIG['path_width']
+        resource_size: float = 0.5 * path_width
         card_canvas.create_oval(
-            GUI_CONFIG['card_width'] / 2 - resource_size,
-            GUI_CONFIG['card_height'] / 2 - resource_size,
-            GUI_CONFIG['card_width'] / 2 + resource_size,
-            GUI_CONFIG['card_height'] / 2 + resource_size,
+            card_width / 2 - resource_size,
+            card_height / 2 - resource_size,
+            card_width / 2 + resource_size,
+            card_height / 2 + resource_size,
             fill=goal_color,
             outline=goal_color
         )
@@ -114,29 +123,34 @@ def draw_path_card(
     Returns:
         tk.Canvas: Canvas with the card drawn (to be placed later).
     """
+    zoom = GUI_CONFIG['zoom']
+    card_width = GUI_CONFIG['card_width'] * zoom
+    card_height = GUI_CONFIG['card_height'] * zoom
+    path_width = GUI_CONFIG['path_width'] * zoom
+
     # Create path card
     card_canvas = tk.Canvas(
         parent_widget,
-        width=GUI_CONFIG['card_width'],
-        height=GUI_CONFIG['card_height'],
+        width=card_width,
+        height=card_height,
         bg=GUI_CONFIG['color_wall']
     )
     card_canvas.bind("<Button-1>", click_callback)
 
     # Preliminary calculations for edge centers.
     edge_centers: dict[str, tuple[int, int]] = {
-        'top': (GUI_CONFIG['card_width'] // 2, 0),
-        'right': (GUI_CONFIG['card_width'], GUI_CONFIG['card_height'] // 2),
-        'bottom': (GUI_CONFIG['card_width'] // 2, GUI_CONFIG['card_height']),
-        'left': (0, GUI_CONFIG['card_height'] // 2)
+        'top': (card_width // 2, 0),
+        'right': (card_width, card_height // 2),
+        'bottom': (card_width // 2, card_height),
+        'left': (0, card_height // 2)
     }
     # Draw paths: if any edge is a path, draw a central point and connect it to each "path" edge.
     if "path" in card.edges.values():
         card_canvas.create_oval(
-            GUI_CONFIG['card_width'] / 2 - GUI_CONFIG['path_width'] / 2,
-            GUI_CONFIG['card_height'] / 2 - GUI_CONFIG['path_width'] / 2,
-            GUI_CONFIG['card_width'] / 2 + GUI_CONFIG['path_width'] / 2,
-            GUI_CONFIG['card_height'] / 2 + GUI_CONFIG['path_width'] / 2,
+            card_width / 2 - path_width / 2,
+            card_height / 2 - path_width / 2,
+            card_width / 2 + path_width / 2,
+            card_height / 2 + path_width / 2,
             fill=GUI_CONFIG['color_path'],
             outline=GUI_CONFIG['color_path']
         )
@@ -145,22 +159,22 @@ def draw_path_card(
             if edge_type == "path":
                 edge_center = edge_centers[edge]
                 card_canvas.create_line(
-                    GUI_CONFIG['card_width'] / 2,
-                    GUI_CONFIG['card_height'] / 2,
+                    card_width / 2,
+                    card_height / 2,
                     edge_center[0],
                     edge_center[1],
                     fill=GUI_CONFIG['color_path'],
-                    width=GUI_CONFIG['path_width']
+                    width=path_width
                 )
     # Draw dead-ends: for each dead-end edge, draw a small circle at that edge's center.
     for edge, edge_type in card.edges.items():
         if edge_type == "dead-end":
             edge_center = edge_centers[edge]
             card_canvas.create_oval(
-                edge_center[0] - GUI_CONFIG['path_width'] / 2,
-                edge_center[1] - GUI_CONFIG['path_width'] / 2,
-                edge_center[0] + GUI_CONFIG['path_width'] / 2,
-                edge_center[1] + GUI_CONFIG['path_width'] / 2,
+                edge_center[0] - path_width / 2,
+                edge_center[1] - path_width / 2,
+                edge_center[0] + path_width / 2,
+                edge_center[1] + path_width / 2,
                 fill=GUI_CONFIG['color_dead-end'],
                 outline=GUI_CONFIG['color_dead-end']
             )

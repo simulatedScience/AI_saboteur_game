@@ -2,11 +2,15 @@
 # config.py
 GUI_CONFIG = {
     # Card size and margins (in pixels)
-    'card_width': 50,
-    'card_height': 60,
+    'card_width': 80,
+    'card_height': 120,
     'card_margin': 1,
-    'path_width': 15,
+    'path_width': 20,
     'selection_width': 5,
+    # Canvas settings
+    "zoom": 0.8,
+    "max_canvas_width": 1200,
+    "max_canvas_height": 800,
     # AI-related settings
     'ai_delay': 200,  # Delay in milliseconds for AI moves
     "auto_start": True,

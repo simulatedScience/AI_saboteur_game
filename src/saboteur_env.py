@@ -317,12 +317,13 @@ class SaboteurEnv(gym.Env):
         """
         Attempt to place the given card at pos. If valid, adds the card to the board and
         uncovers any adjacent hidden goal card (gold or coal) that is connected via a "path" edge.
-        For coal goals, we update the card's connections so that its predefined paths take effect.
-        
+        For coal goals, if the touching edge is not "path", rotate the coal card once so that it becomes "path",
+        then update its connections accordingly.
+
         Args:
             card (Card): The card to be placed.
             pos (tuple[int, int]): The target board position.
-        
+
         Returns:
             bool: True if placement is successful, False otherwise.
         """
@@ -332,7 +333,7 @@ class SaboteurEnv(gym.Env):
         card.x, card.y = pos
         self.board[pos] = card
 
-        # Import calculate_connections here so that uncovered goals can have their connectivity updated.
+        # Import calculate_connections from cards.
         from .cards import calculate_connections
 
         x, y = pos
@@ -340,21 +341,36 @@ class SaboteurEnv(gym.Env):
             if npos in self.board:
                 neighbor: Card = self.board[npos]
                 if neighbor.type == "goal" and neighbor.hidden:
-                    # Determine which edge of the new card touches the neighbor.
+                    # Determine the touching edges.
                     if npos[0] - x == 1:
                         my_edge = card.edges["right"]
+                        neighbor_edge = neighbor.edges["left"]
                     elif npos[0] - x == -1:
                         my_edge = card.edges["left"]
+                        neighbor_edge = neighbor.edges["right"]
                     elif npos[1] - y == 1:
                         my_edge = card.edges["bottom"]
+                        neighbor_edge = neighbor.edges["top"]
                     elif npos[1] - y == -1:
                         my_edge = card.edges["top"]
+                        neighbor_edge = neighbor.edges["bottom"]
                     else:
                         continue
-                    # If the new card's edge is "path", then uncover the goal.
                     if my_edge == "path":
-                        # For coal (or even gold) goals, update connections so that they are treated as a valid path.
-                        # This ensures that subsequent valid placement checks use the correct connectivity.
+                        if neighbor.goal_type == "coal":
+                            # If the neighbor's touching edge is not "path", rotate the coal card once.
+                            if neighbor_edge != "path":
+                                neighbor.rotate()
+                                # Update neighbor_edge after rotation.
+                                if npos[0] - x == 1:
+                                    neighbor_edge = neighbor.edges["left"]
+                                elif npos[0] - x == -1:
+                                    neighbor_edge = neighbor.edges["right"]
+                                elif npos[1] - y == 1:
+                                    neighbor_edge = neighbor.edges["top"]
+                                elif npos[1] - y == -1:
+                                    neighbor_edge = neighbor.edges["bottom"]
+                        # In both coal and gold cases, update connections.
                         neighbor.connections = calculate_connections(neighbor.edges)
                         neighbor.hidden = False
         return True
