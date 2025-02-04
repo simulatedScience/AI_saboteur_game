@@ -7,9 +7,10 @@ the remaining players are treated as human (here, simulated by a dummy skip agen
 At the end of the game, final rewards are printed.
 """
 
-import sys
+
 from src.saboteur_env import SaboteurEnv
-from src.agents import RandomAgent, RuleBasedAgent
+from src.agents.random_ai import RandomAgent
+from src.agents.rule_based_ai import RuleBasedAgent
 from src.config import CONFIG, AI_CONFIG
 
 def get_agent(agent_type: str, env: SaboteurEnv):

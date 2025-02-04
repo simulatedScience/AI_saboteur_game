@@ -19,7 +19,8 @@ from .saboteur_env import SaboteurEnv
 from .config import GUI_CONFIG, CONFIG
 from .cards import Card, get_random_edges, calculate_connections
 from .draw_card import draw_card
-from .agents import RandomAgent, RuleBasedAgent
+from .agents.random_ai import RandomAgent
+from .agents.rule_based_ai import RuleBasedAgent
 
 
 class SaboteurGUI:
