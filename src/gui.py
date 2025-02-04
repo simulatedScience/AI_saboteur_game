@@ -16,9 +16,10 @@ from typing import Any
 
 # Local imports
 from .saboteur_env import SaboteurEnv
-from .config import GUI_CONFIG
+from .config import GUI_CONFIG, CONFIG
 from .cards import Card, get_random_edges, calculate_connections
 from .draw_card import draw_card
+from .agents import RandomAgent, RuleBasedAgent
 
 
 class SaboteurGUI:
@@ -30,11 +31,33 @@ class SaboteurGUI:
         self.env.reset()
         self.root: tk.Tk = tk.Tk()
         self.root.title("Saboteur Card Game")
-
-        if player_names is None:
-            self.player_names: list[str] = [f"Player {i+1}" for i in range(self.env.num_players)]
-        else:
-            self.player_names = player_names
+        
+        # Setup player names and agent types based on CONFIG["AI_TYPES"]
+        config_ai_types: list[str] = CONFIG.get("AI_TYPES", [])
+        # Pad with "human" if necessary.
+        while len(config_ai_types) < self.env.num_players:
+            config_ai_types.append("human")
+        
+        self.agents: list[object | None] = []
+        # If player_names is provided, we override it with names plus AI type info.
+        self.player_names = []
+        for i in range(self.env.num_players):
+            ai_type = config_ai_types[i]
+            if ai_type.lower() in ("random", "rule-based"):
+                # Create an agent accordingly.
+                if ai_type.lower() == "random":
+                    agent = RandomAgent(env)
+                else:
+                    agent = RuleBasedAgent(env)
+                self.agents.append(agent)
+                self.player_names.append(f"Player {i+1} ({ai_type.capitalize()})")
+            else:
+                self.agents.append(None)
+                # For human players, use provided name if any, else default.
+                if player_names is not None and i < len(player_names):
+                    self.player_names.append(player_names[i])
+                else:
+                    self.player_names.append(f"Player {i+1}")
 
         # Board dragging offset.
         self.board_offset_x: int = 0
@@ -66,6 +89,9 @@ class SaboteurGUI:
         self.canvas.bind("<B3-Motion>", self.on_right_drag)
 
         self.draw()
+        # Auto-start if configured and if current player is AI.
+        if GUI_CONFIG.get("auto_start", False):
+            self.check_auto_act()
 
     def update_board_extents(self) -> None:
         """
@@ -270,9 +296,13 @@ class SaboteurGUI:
     def on_click(self, event: tk.Event) -> None:
         """
         Handle left-clicks on the canvas.
-        If a hand card is selected, attempt to place it.
+        If a human player has selected a card, attempt to place it.
+        (If it's an AI turn, ignore clicks.)
         """
         if self.env.done:
+            return
+        # Do nothing if it's an AI turn.
+        if self.agents[self.env.current_player] is not None:
             return
 
         click_x, click_y = event.x, event.y
@@ -289,6 +319,8 @@ class SaboteurGUI:
             self.selected_card = None
             self.selected_card_index = None
             self.draw()
+            # After a human move, check if the next turn is AI and schedule auto-action.
+            self.check_auto_act()
 
     def on_right_press(self, event: tk.Event) -> None:
         """
@@ -320,21 +352,53 @@ class SaboteurGUI:
         self.draw()
 
     def play_again(self) -> None:
-        """
-        Reset the game.
-        """
         self.env.reset()
         self.selected_card = None
         self.selected_card_index = None
+        # Reset board offsets if necessary.
         self.board_offset_x = 0
         self.board_offset_y = 0
         self.draw()
+        # Check for auto-action in the new game.
+        self.check_auto_act()
 
     def run(self) -> None:
         """
         Start the Tkinter main loop.
         """
         self.root.mainloop()
+    
+    def check_auto_act(self) -> None:
+        """
+        If the current player is controlled by an AI, schedule an automatic action.
+        """
+        current_player: int = self.env.current_player
+        agent = self.agents[current_player]
+        if agent is not None:
+            # Schedule the AI action after a short delay (e.g., 1000 ms).
+            self.root.after(GUI_CONFIG['ai_delay'], self.auto_act)
+
+    def auto_act(self) -> None:
+        """
+        Execute an AI action for the current player.
+        Calls the agent's act() method, prints the chosen action, and updates the GUI.
+        After executing the action, check again if the next turn is an AI turn and schedule it.
+        """
+        if self.env.done:
+            return
+        current_player: int = self.env.current_player
+        agent = self.agents[current_player]
+        if agent is None:
+            return  # This should not happen if check_auto_act was called.
+        action: tuple[int, tuple[int, int], int] = agent.act(current_player)
+        print(f"AI Player {current_player+1} action: {action}")
+        obs, reward, done, _, info = self.env.step(action)
+        # Clear any selected card.
+        self.selected_card = None
+        self.selected_card_index = None
+        self.draw()
+        # Immediately check if the next turn is also an AI turn.
+        self.check_auto_act()
 
 
 if __name__ == "__main__":

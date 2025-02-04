@@ -361,20 +361,26 @@ class SaboteurEnv(gym.Env):
 
 
 
-    def compute_final_rewards(self) -> dict[int, int]:
+    def compute_final_rewards(self) -> dict[tuple, int]:
         """
-        Compute final rewards based on finishing order. The last valid mover receives
-        num_players points; each subsequent player (in play order) receives one point less.
-
+        Compute final rewards based on finishing order.
+        The winning player receives AI_CONFIG["final_reward_winner"] points,
+        and each subsequent player (in play order) receives one point less,
+        with a minimum of 1 point.
+        
         Returns:
-            dict[int, int]: Mapping from player index to reward.
+            dict: Mapping from player index to reward.
         """
+        # Get configuration for final rewards.
+        from .config import AI_CONFIG  # using built-in types in Python 3.11; no need to import List/Dict
+        winner_reward: int = AI_CONFIG.get("final_reward_winner", self.num_players)
+        rewards: dict[tuple, int] = {}
         winning_player: int = self.last_valid_player if self.last_valid_player is not None else self.current_player
-        rewards: dict[int, int] = {}
         for i in range(self.num_players):
             player: int = (winning_player + i) % self.num_players
-            rewards[player] = self.num_players - i
+            rewards[player] = max(winner_reward - i, 1)
         return rewards
+
 
     def step(self, action: tuple[int, tuple[int, int], int]) -> tuple[np.ndarray, int, bool, bool, dict[str, any]]:
         """

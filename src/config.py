@@ -7,6 +7,9 @@ GUI_CONFIG = {
     'card_margin': 1,
     'path_width': 20,
     'selection_width': 5,
+    # AI-related settings
+    'ai_delay': 200,  # Delay in milliseconds for AI moves
+    "auto_start": True,
     # Font
     'font': 'Roboto',
     # Colors (use softer, less bold shades)
@@ -25,6 +28,14 @@ CONFIG = {
     'num_players': 4,  # default number of players
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
+    "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
+    "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
+    # "AI_TYPES": ["random", "rule-based"],
+}
+
+# AI configuration.
+AI_CONFIG = {
+    "final_reward_winner": 4,  # The winning player receives 4 points; subsequent players get one less each.
 }
 
 def check_config() -> bool:

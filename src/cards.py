@@ -130,13 +130,6 @@ def calculate_connections(edges: dict[str, str]) -> list[tuple[str, str]]:
             connections.append((a, b))
         else:
             connections.append((b, a))
-    if "dead-end" in edges.values():
-        print("Connections for card:")
-        for edge, edge_type in edges.items():
-            print(f"{edge}: {edge_type}")
-        print("Connections:")
-        for conn in connections:
-            print(conn)
     return connections
 
 def load_deck(deck_config_path: str) -> list[Card]:
