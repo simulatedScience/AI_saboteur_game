@@ -29,10 +29,11 @@ GUI_CONFIG = {
 }
 
 CONFIG = {
-    'num_players': 4,  # default number of players
+    'num_players': 2,
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
     "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
+    "AI_TYPES": ["human", "human"],
     # "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
     # "AI_TYPES": ["random", "rule-based"],
 }

@@ -41,7 +41,7 @@ def mask_func(env: SaboteurEnv) -> np.ndarray:
     x_mask = np.zeros(x_dim, dtype=np.uint8)
     y_mask = np.zeros(y_dim, dtype=np.uint8)
     orient_mask = np.zeros(orient_dim, dtype=np.uint8)
-    
+
     # Collect valid moves: a valid move is (card_index, (x, y), orientation)
     valid_moves = []
     for card_idx in range(card_dim):

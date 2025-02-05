@@ -59,15 +59,15 @@ class SaboteurDiscreteWrapper(gym.Env):
         obs, reward, done, truncated, info = self.env.step(game_action)
         state = self._get_state(self.env.current_player)
         return state, reward, done, truncated, info
-        
+
     def render(self, mode: str = "human") -> None:
         self.env.render(mode)
-        
+
     def _get_state(self, player_index: int) -> np.ndarray:
         board_state = self._encode_board()
         hand_state = self._encode_hand(player_index)
         return np.concatenate([board_state, hand_state])
-        
+
     def _encode_board(self) -> np.ndarray:
         cards = list(self.env.board.values())
         cards.sort(key=lambda c: ((c.x if c.x is not None else 0), (c.y if c.y is not None else 0)))
@@ -107,6 +107,8 @@ class SaboteurDiscreteWrapper(gym.Env):
         return np.array(pos + edges + conn + flags, dtype=np.float32)
         
     def _snap_to_valid(self, card: any, desired: tuple[float, float], orientation: int) -> tuple[float, float]:
+        # Set card orientation
+        card.rotation = orientation
         valid_positions = self.env.get_valid_placements(card)
         if not valid_positions:
             return (0.0, 0.0)

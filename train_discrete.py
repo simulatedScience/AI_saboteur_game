@@ -68,8 +68,14 @@ def train():
         save_path=run_folder,
         name_prefix="checkpoint"
     )
-    total_timesteps = AI_CONFIG.get("timesteps", 100000)
-    model.learn(total_timesteps=total_timesteps, callback=[eval_callback, checkpoint_callback])
+    total_timesteps = AI_CONFIG.get("timesteps", 100_000)
+    model.learn(
+        total_timesteps=total_timesteps,
+        callback=[
+            eval_callback,
+            checkpoint_callback
+            ]
+        )
     model.save(os.path.join(run_folder, "trained_model"))
     env.close()
 

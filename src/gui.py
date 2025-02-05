@@ -109,8 +109,8 @@ class SaboteurGUI:
 
         self.board_cols = self.max_x - self.min_x + 1
         self.board_rows = self.max_y - self.min_y + 1
-        new_width: int = int(GUI_CONFIG['card_margin'] * zoom + self.board_cols * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom))
-        new_height: int = int(GUI_CONFIG['card_margin'] * zoom + self.board_rows * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + 150)
+        new_width: int = int(GUI_CONFIG['card_margin'] + self.board_cols * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin'])))
+        new_height: int = int(GUI_CONFIG['card_margin'] + self.board_rows * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin'])) + 150)
         max_w: int = GUI_CONFIG.get("max_canvas_width", new_width)
         max_h: int = GUI_CONFIG.get("max_canvas_height", new_height)
         self.canvas_width = min(new_width, max_w)
@@ -124,8 +124,8 @@ class SaboteurGUI:
         """
         zoom: float = GUI_CONFIG.get("zoom", 1.0)
         x, y = pos
-        pixel_x: int = int(GUI_CONFIG['card_margin'] * zoom + (x - self.min_x) * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom) + self.board_offset_x)
-        pixel_y: int = int(GUI_CONFIG['card_margin'] * zoom + (y - self.min_y) * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + self.board_offset_y)
+        pixel_x: int = int(GUI_CONFIG['card_margin'] + (x - self.min_x) * ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin'])) + self.board_offset_x)
+        pixel_y: int = int(GUI_CONFIG['card_margin'] + (y - self.min_y) * ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin'])) + self.board_offset_y)
         return (pixel_x, pixel_y)
 
 
@@ -135,8 +135,9 @@ class SaboteurGUI:
         """
         zoom: float = GUI_CONFIG.get("zoom", 1.0)
         x, y = pixel
-        x = int((x - GUI_CONFIG['card_margin'] * zoom - self.board_offset_x) / ((GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) * zoom) + self.min_x)
-        y = int((y - GUI_CONFIG['card_margin'] * zoom - self.board_offset_y) / ((GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) * zoom) + self.min_y)
+        x = (x - GUI_CONFIG['card_margin'] - self.board_offset_x) // (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x
+        y = (y - GUI_CONFIG['card_margin'] - self.board_offset_y) // (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.min_y
+        print(f"Click at pixel ({x}, {y}) -> board ({x}, {y})")
         return (x, y)
 
     def draw(self) -> None:
@@ -178,8 +179,8 @@ class SaboteurGUI:
             if card.type == "goal" and not card.hidden:
                 goal_text: str = card.goal_type.upper() if card.goal_type else "GOLD"
                 self.canvas.create_text(
-                    pixel_x + int((GUI_CONFIG['card_width'] * zoom) / 2),
-                    pixel_y + int((GUI_CONFIG['card_height'] * zoom) / 2),
+                    pixel_x + int((GUI_CONFIG['card_width']) / 2),
+                    pixel_y + int((GUI_CONFIG['card_height']) / 2),
                     text=goal_text,
                     fill="black",
                     font=(GUI_CONFIG['font'], 12)
