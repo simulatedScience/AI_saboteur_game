@@ -42,7 +42,10 @@ CONFIG = {
 AI_CONFIG = {
     'learning_rate': 0.0001,  # Learning rate
     'gamma': 0.99,  # Discount factor
-    'n_steps': 10_000,  # Number of timesteps to train
+    'timesteps': 100_000,  # Number of timesteps to train
+    'batch_size': 1024,  # Batch size
+    'n_envs': 16,  # Number of parallel environments
+
     # 'dqn_hidden_layers': (256, 256) # hidden layers in NN
     # "final_reward_winner": 4,  # The winning player receives 4 points; subsequent players get one less each.
 }
