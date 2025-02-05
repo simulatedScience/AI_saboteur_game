@@ -18,8 +18,8 @@ import numpy as np
 from gymnasium import spaces
 
 # Local imports
-from .config import CONFIG
-from .cards import Card, load_deck
+from .config import CONFIG, AI_CONFIG
+from .cards import Card, load_deck, calculate_connections
 
 
 def get_opposite_edge(edge: str) -> str:
@@ -108,13 +108,21 @@ class SaboteurEnv(gym.Env):
             goal_card.hidden = True
             self.board[pos] = goal_card
 
-    def reset(self) -> tuple[np.ndarray, dict[str, any]]:
+    def reset(self,
+            seed: int = None,
+            options: dict = {},
+            ) -> tuple[np.ndarray, dict[str, any]]:
         """
         Reset the environment to the initial state.
 
         Returns:
             tuple: A dummy observation and an empty info dict.
         """
+        if options:
+            for key, value in options.items():
+                print(f"Setting option {key} to {value}")
+        if seed is not None:
+            random.seed(seed)
         self._create_initial_board()
         self.current_player = 0
         self.done = False
@@ -333,9 +341,6 @@ class SaboteurEnv(gym.Env):
         card.x, card.y = pos
         self.board[pos] = card
 
-        # Import calculate_connections from cards.
-        from .cards import calculate_connections
-
         x, y = pos
         for npos in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
             if npos in self.board:
@@ -388,7 +393,6 @@ class SaboteurEnv(gym.Env):
             dict: Mapping from player index to reward.
         """
         # Get configuration for final rewards.
-        from .config import AI_CONFIG  # using built-in types in Python 3.11; no need to import List/Dict
         winner_reward: int = AI_CONFIG.get("final_reward_winner", self.num_players)
         rewards: dict[tuple, int] = {}
         winning_player: int = self.last_valid_player if self.last_valid_player is not None else self.current_player
@@ -426,7 +430,7 @@ class SaboteurEnv(gym.Env):
 
         current_hand: list[Card] = self.player_hands[self.current_player]
         if card_index < 0 or card_index >= len(current_hand):
-            print("Invalid card index!")
+            print(f"Invalid card index: {card_index}")
             return self._get_obs(), -20, self.done, False, self.info
 
         played_card: Card = current_hand[card_index]
@@ -435,7 +439,7 @@ class SaboteurEnv(gym.Env):
 
         success: bool = self.place_card(played_card, pos)
         if not success:
-            print("Invalid card placement!")
+            print(f"Invalid card placement at x={pos[0]}, y={pos[1]}")
             return self._get_obs(), -20, self.done, False, self.info
 
         # Valid move: reset consecutive skip counter.

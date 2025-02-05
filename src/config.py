@@ -8,7 +8,7 @@ GUI_CONFIG = {
     'path_width': 20,
     'selection_width': 5,
     # Canvas settings
-    "zoom": 0.8,
+    "zoom": 1,
     "max_canvas_width": 1200,
     "max_canvas_height": 800,
     # AI-related settings
@@ -29,17 +29,25 @@ GUI_CONFIG = {
 }
 
 CONFIG = {
-    'num_players': 4,  # default number of players
+    'num_players': 2,
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
     "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
-    "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
+    "AI_TYPES": ["human", "human"],
+    # "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
     # "AI_TYPES": ["random", "rule-based"],
 }
 
 # AI configuration.
 AI_CONFIG = {
-    "final_reward_winner": 4,  # The winning player receives 4 points; subsequent players get one less each.
+    'learning_rate': 0.0001,  # Learning rate
+    'gamma': 0.99,  # Discount factor
+    'timesteps': 100_000,  # Number of timesteps to train
+    'batch_size': 1024,  # Batch size
+    'n_envs': 16,  # Number of parallel environments
+
+    # 'dqn_hidden_layers': (256, 256) # hidden layers in NN
+    # "final_reward_winner": 4,  # The winning player receives 4 points; subsequent players get one less each.
 }
 
 def check_config() -> bool:

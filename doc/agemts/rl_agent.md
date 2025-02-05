@@ -2,90 +2,101 @@
 
 ## Overview
 
-This document describes the design and training approach for reinforcement learning (RL) agents in the Saboteur game. Our aim is to develop agents that learn to play the game in a multi-agent setting and can be later used in the GUI (by selecting an "rl_agent" player type or loading a saved model).
+The Saboteur game features a dynamic board, rich card features (including edge types and internal connections), and complex placement rules. Our RL agent must “see” all of these aspects and output a move that is both valid and strategically sound. This document summarizes the design of the agent’s state and action spaces and explains our choices.
 
 ## State Representation
 
-We encode the game state as a dense vector that consists of two parts:
-1. **Board Encoding (225 dimensions):**  
-   - We fix a grid of size 15×15 (covering coordinates from -7 to +7 in both directions, with the start tile at (0,0)).
-   - Each cell is encoded as:
-     - `0`: Empty.
-     - `1`: Start card.
-     - `2`: Path card.
-     - `3`: Uncovered goal card.
-     - `4`: Hidden goal card.
-   - The 15×15 grid is then flattened into a 225-dimensional vector.
+The state must capture two main components: the current board and the current player’s hand.
 
-2. **Hand Encoding (H dimensions):**  
-   - For the current player's hand (of fixed size H, e.g. 6), each card is encoded as:
-     - `1`: Start card.
-     - `2`: Path card.
-     - `3`: Uncovered goal card.
-     - `4`: Hidden goal card.
-   - This yields an H-dimensional vector.
+### 1. Board State
 
-The final state vector is the concatenation of the board encoding and hand encoding (total dimension = 225 + H).
+- **Card Position:**  
+  Each card on the board is placed at continuous (x, y) coordinates.  
+- **Edge Types:**  
+  Each card has four edges (top, right, bottom, left). Each edge can be one of three types:
+  - `wall`
+  - `path` (and, for connectivity purposes, we treat `dead-end` similar to `path` but note it separately)
+  - `dead-end`
+  
+  For each edge, we use a one-hot encoding (length 3) to indicate its type.
+- **Connection Information:**  
+  A card’s internal connections are given as pairs among the four edges. There are 6 possible connection pairs; we encode each as a binary value (1 if connected, 0 otherwise).
+- **Special Flags:**  
+  - **Hidden Goal Flag:** A binary flag (1 if the card is a goal card that is hidden; 0 otherwise). Once uncovered, a goal card is treated as a path card.
+  - **Start Flag:** A binary flag indicating if the card is the start card.
 
-## Action Space
+In total, each board card is encoded with:
+- 2 continuous values for position  
+- 4 edges × 3 one-hot values = 12 binary values  
+- 6 binary connection values  
+- 2 binary flags  
+**Total per card:** 2 + 12 + 6 + 2 = **22 features**
 
-An action in Saboteur consists of:
-- **Card index:** Which card in the hand to play (0 to H-1).
-- **Board position:** Where to place it. We discretize the board grid (15×15 cells). The grid index (0 to 14 for both x and y) is mapped to board coordinates by subtracting 7.
-- **Orientation:** Either 0° (encoded as 0) or 180° (encoded as 1).
+Since the board is variable in size, we fix a maximum (e.g. 100 cards) and pad with zeros when fewer are present. Thus, the board state is represented as a vector of length `100 × 22 = 2200`.
 
-Thus, the total number of discrete actions is:  
-`H * 15 * 15 * 2`
+### 2. Hand State
 
-An action is represented as a single integer in this range. The agent uses an inverse mapping to convert this integer to a triplet (card_index, board_position, orientation).
+- The player’s hand has a fixed maximum size (e.g. 6 cards).  
+- Each card in the hand is encoded using the same 22 features as above.  
+- Thus, the hand state vector has length `6 × 22 = 132`.
 
-## Network Architecture
+### 3. Full State Vector
 
-We implement a Deep Q-Network (DQN) with fully connected layers. The architecture is configurable via a tuple parameter:
-- **Input Layer:** Size equal to the state dimension (e.g., 231 if H=6).
-- **Hidden Layers:** A configurable tuple (e.g., (128, 128)). Each hidden layer uses ReLU activation.
-- **Output Layer:** Size equal to the discrete action space (e.g., 6 * 15 * 15 * 2 = 2700).
+The full state is the concatenation of the board state and hand state. For our chosen maximums, the state vector length is:
+- **2200 (board) + 132 (hand) = 2332 features**
 
-This DQN outputs Q-values for each discrete action.
+This vector fully represents the game situation (all cards on board with their positions and edge/connectivity features, plus the hand).
 
-## Training Procedure
+## Action Space Representation
 
-1. **Experience Collection:**  
-   The agent interacts with the Saboteur environment (SaboteurEnv) and collects transitions in the form `(state, action, reward, next_state, done)`.  
-   The state is computed as described above; the action is stored as its discrete integer index.
+A valid Saboteur move consists of:
+1. **Card Selection:**  
+   Choose one card from the hand. (Discrete: 0 to 5)
+2. **Placement Coordinates:**  
+   Instead of choosing a cell from a fixed grid, the agent outputs continuous (x, y) coordinates. These coordinates are bounded (e.g. between –10 and 10) to cover all plausible placements. After the agent outputs (x, y), the environment will “snap” these coordinates to the closest valid placement (as determined by the game’s rules).
+3. **Orientation:**  
+   Choose the card’s orientation: 0° or 180° (Discrete: 0 or 1)
 
-2. **Replay Buffer:**  
-   Transitions are stored in a replay buffer. A batch of transitions is sampled for training.
+Thus, the agent’s action is a tuple:
+- `card_index` (Discrete, 6 options)
+- `x` (Continuous, Box(low=-10, high=10))
+- `y` (Continuous, Box(low=-10, high=10))
+- `orientation` (Discrete, 2 options)
 
-3. **Optimization:**  
-   We use a mean squared error loss between the predicted Q-values and the target Q-values computed using the Bellman equation.  
-   A target network is used and updated periodically.
+This hybrid action space is continuous for the placement coordinates (allowing arbitrary positions) and discrete for card selection and orientation. The environment’s valid placements (via `env.get_valid_placements(card)`) are used to “snap” the (x, y) output to a truly valid location.
 
-4. **Epsilon-Greedy:**  
-   The agent uses an epsilon-greedy policy for exploration during training.
+## Policy Network Design
 
-5. **Hyperparameters:**  
-   Hyperparameters such as learning rate, discount factor, batch size, and network architecture are configurable via the `AI_CONFIG` dictionary.
+The RL agent uses a neural network policy that takes the 2332-dimensional state vector as input and produces three outputs (via three separate “heads”):
+1. **Card Selection Head:**  
+   A categorical distribution (logits) over 6 cards.
+2. **Placement Coordinates Head:**  
+   Outputs a 2-dimensional continuous value (the mean of a Gaussian). (For simplicity, we use a fixed standard deviation.)
+3. **Orientation Head:**  
+   A categorical distribution (logits) over 2 orientations.
 
-6. **Multi-Agent Considerations:**  
-   Initially, training is done in a self-play (single-agent) setup. Later, the framework can be extended to multi-agent training where different networks interact.
+The network architecture is configurable via a parameter (a tuple of hidden layer sizes), e.g. `(256, 256)`. The agent’s training algorithm (e.g. PPO from Stable-Baselines3) can then optimize this policy.
 
-## How to Train
+## Action Masking
 
-- Run the training script (`train_rl.py`).  
-- The training script resets the environment at the beginning of each episode, collects transitions, and updates the network parameters using batches sampled from the replay buffer.  
-- Periodically, the target network is updated.
-- When training is complete, the trained model is saved (e.g., `trained_dqn.pt`).
+Not every theoretical action is valid according to Saboteur rules. The environment can compute, for a given card and orientation, the set of valid placements. The agent’s continuous coordinate output is “snapped” to the nearest valid placement. Additionally, if no valid placements exist for the chosen card and orientation, the agent should be forced to choose another card or skip its turn.
 
-## Using the Trained Agent in the GUI
+## Summary
 
-A new player type (e.g., "rl_agent") can be added in the configuration. The GUI can load a stored neural network (from a file such as `trained_dqn.pt`) and create an RL agent instance that uses the trained DQN to select moves automatically.
+- **State Space:**  
+  A 2332-dimensional vector encoding:
+  - Up to 100 board cards (each with 22 features)
+  - 6 hand cards (each with 22 features)
+- **Action Space:**  
+  A hybrid space consisting of:
+  - Discrete card index (6 options)
+  - Continuous (x, y) placement coordinates (e.g. in [-10, 10])
+  - Discrete orientation (2 options)
+- **Policy:**  
+  A configurable neural network with three heads (card selection, coordinate output, orientation selection) that maps the state vector to an action.
+- **Action Masking and Snapping:**  
+  The environment provides valid placements for each card. The agent’s continuous (x, y) output is snapped to the closest valid placement.
+  
+This design ensures that every valid Saboteur move can be represented and that the agent receives all necessary information (including detailed card edge types and connectivity) to learn effective play.
 
-## Next Steps
-
-- Refine the state representation to include more detailed information (such as edge connectivity, card rotation, etc.).
-- Improve the action mapping (and record the discrete action index during training).
-- Extend the training to multi-agent setups.
-- Experiment with convolutional architectures if necessary.
-
-Happy training!
+_End of Documentation_
