@@ -1,21 +1,14 @@
 # rl_agent.py
 """
-This module implements an RL agent for the Saboteur game using a configurable DQN.
-It adheres to the BaseAgent interface.
-The agent uses a state representation that encodes:
-  - A fixed 15x15 board grid (centered at (0,0)) where each cell is:
-      0: empty,
-      1: start card,
-      2: path card,
-      3: uncovered goal card,
-      4: hidden goal card.
-  - The current player's hand encoded as an integer per card:
-      1: start, 2: path, 3: uncovered goal, 4: hidden goal.
-The discrete action space is defined as:
-  - card index (0 to H-1),
-  - board cell (x, y) where x and y are in {0,1,...,14} (which map to coordinates by subtracting 7),
-  - orientation (0 or 1; 0 means 0° and 1 means 180°).
-Total action space size = H * 15 * 15 * 2.
+This module implements an RL agent for Saboteur using a hybrid action space.
+The agent follows the BaseAgent interface and outputs an action tuple:
+    (card_index: int, (x: float, y: float), orientation: int)
+The state is a 2332-dimensional vector encoding up to 100 board cards and 6 hand cards.
+The policy network has three heads:
+  - Card selection (discrete over 6 options)
+  - Placement coordinates (continuous 2D output, to be snapped to the closest valid placement)
+  - Orientation selection (discrete over 2 options)
+The network architecture is configurable via AI_CONFIG.
 """
 
 import random
@@ -28,39 +21,54 @@ from .base_agent import BaseAgent
 from ..saboteur_env import SaboteurEnv
 from ..config import AI_CONFIG, CONFIG
 
-# Use built-in types (Python 3.11 style)
+# Define state dimensions based on our documentation.
+MAX_BOARD_CARDS: int = 100
+CARD_FEATURES: int = 22  # per card
+BOARD_STATE_SIZE: int = MAX_BOARD_CARDS * CARD_FEATURES  # 2200
+HAND_SIZE: int = CONFIG.get("hand_size", 6)
+HAND_STATE_SIZE: int = HAND_SIZE * CARD_FEATURES         # 132
+STATE_SIZE: int = BOARD_STATE_SIZE + HAND_STATE_SIZE       # 2332
 
-class DQN(nn.Module):
-    def __init__(self, state_size: int, action_size: int, hidden_layers: tuple) -> None:
+class RLPolicy(nn.Module):
+    def __init__(self, input_dim: int, hidden_layers: tuple, hand_size: int) -> None:
         """
-        Initialize the DQN model.
+        Initialize the policy network.
 
         Args:
-            state_size (int): Dimension of the input state.
-            action_size (int): Number of discrete actions.
-            hidden_layers (tuple): A tuple of integers, each specifying the number of units in a hidden layer.
+            input_dim (int): Dimension of the input state.
+            hidden_layers (tuple): A tuple of integers specifying hidden layer sizes.
+            hand_size (int): Number of cards in hand.
         """
         super().__init__()
         layers = []
-        input_size = state_size
+        current_dim = input_dim
         for h in hidden_layers:
-            layers.append(nn.Linear(input_size, h))
+            layers.append(nn.Linear(current_dim, h))
             layers.append(nn.ReLU())
-            input_size = h
-        layers.append(nn.Linear(input_size, action_size))
-        self.model = nn.Sequential(*layers)
+            current_dim = h
+        self.feature_extractor = nn.Sequential(*layers)
+        # Head for card selection (6 outputs)
+        self.card_head = nn.Linear(current_dim, hand_size)
+        # Head for placement coordinates (2 outputs)
+        self.coord_head = nn.Linear(current_dim, 2)
+        # Head for orientation (2 outputs)
+        self.orient_head = nn.Linear(current_dim, 2)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Forward pass.
+        Forward pass of the network.
 
         Args:
-            x (torch.Tensor): Input tensor.
+            x (torch.Tensor): Input state tensor of shape (batch_size, input_dim).
 
         Returns:
-            torch.Tensor: Q-values for each action.
+            tuple: (card_logits, coord_output, orientation_logits)
         """
-        return self.model(x)
+        features = self.feature_extractor(x)
+        card_logits = self.card_head(features)
+        coord_output = self.coord_head(features)
+        orientation_logits = self.orient_head(features)
+        return card_logits, coord_output, orientation_logits
 
 class RLAgent(BaseAgent):
     def __init__(self, env: SaboteurEnv) -> None:
@@ -68,158 +76,145 @@ class RLAgent(BaseAgent):
         Initialize the RLAgent.
 
         Args:
-            env (SaboteurEnv): The game environment.
+            env (SaboteurEnv): The Saboteur game environment.
         """
         super().__init__(env)
-        # Define state: we use a 15x15 board grid plus the hand.
-        self.grid_size: int = 15
-        self.board_state_dim: int = self.grid_size * self.grid_size  # 225 cells
+        # Set state and action sizes based on design.
+        self.state_size: int = STATE_SIZE
+        # The action output is a tuple: card_index (6), continuous (x, y) and orientation (2).
         self.hand_size: int = CONFIG.get("hand_size", 6)
-        self.hand_state_dim: int = self.hand_size  # One integer per card
-        self.state_size: int = self.board_state_dim + self.hand_state_dim
-
-        # Define action space: hand index * grid_size^2 * 2 orientations.
-        self.action_size: int = self.hand_size * (self.grid_size ** 2) * 2
-
-        # Configure DQN hidden layers from AI_CONFIG.
-        hidden_layers: tuple = AI_CONFIG.get("dqn_hidden_layers", (128, 128))
-        self.policy_net = DQN(self.state_size, self.action_size, hidden_layers)
-        self.target_net = DQN(self.state_size, self.action_size, hidden_layers)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
+        self.action_space_dims = {
+            "card": self.hand_size,
+            "coord": 2,    # continuous output; bounds [-10, 10]
+            "orient": 2
+        }
+        hidden_layers: tuple = AI_CONFIG.get("dqn_hidden_layers", (256, 256))
+        self.policy_net = RLPolicy(self.state_size, hidden_layers, self.hand_size)
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=AI_CONFIG.get("lr", 0.001))
-        self.epsilon: float = AI_CONFIG.get("epsilon", 0.1)  # Exploration rate
-
-    def _get_board_state(self) -> np.ndarray:
-        """
-        Convert the current board (a dict mapping (x,y) to Card) into a fixed-size grid.
-        The grid is 15x15, covering coordinates from -7 to +7 in both x and y.
-        Each cell is encoded as:
-          0: empty,
-          1: start,
-          2: path (includes all non-goal cards of type "path"),
-          3: uncovered goal,
-          4: hidden goal.
-        
-        Returns:
-            np.ndarray: Flattened grid (length = 15*15).
-        """
-        grid = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
-        offset = self.grid_size // 2  # 7 for grid_size 15
-        for (x, y), card in self.env.board.items():
-            grid_x = x + offset
-            grid_y = y + offset
-            if 0 <= grid_x < self.grid_size and 0 <= grid_y < self.grid_size:
-                if card.type == "start":
-                    grid[grid_y, grid_x] = 1
-                elif card.type == "path":
-                    grid[grid_y, grid_x] = 2
-                elif card.type == "goal":
-                    # For goal cards, differentiate uncovered vs hidden.
-                    if card.hidden:
-                        grid[grid_y, grid_x] = 4
-                    else:
-                        grid[grid_y, grid_x] = 3
-        return grid.flatten()
-
-    def _get_hand_state(self, player_index: int) -> np.ndarray:
-        """
-        Encode the player's hand as a vector of length hand_size.
-        For each card, encode:
-          1: start,
-          2: path,
-          3: uncovered goal,
-          4: hidden goal.
-        If the player has fewer than hand_size cards, pad with 0.
-
-        Args:
-            player_index (int): The index of the current player.
-
-        Returns:
-            np.ndarray: The hand encoding.
-        """
-        hand = self.env.player_hands[player_index]
-        encoding = []
-        for card in hand:
-            if card.type == "start":
-                encoding.append(1)
-            elif card.type == "path":
-                encoding.append(2)
-            elif card.type == "goal":
-                encoding.append(3 if not card.hidden else 4)
-            else:
-                encoding.append(0)
-        # Pad if necessary.
-        while len(encoding) < self.hand_size:
-            encoding.append(0)
-        return np.array(encoding, dtype=np.float32)
+        self.epsilon: float = AI_CONFIG.get("epsilon", 0.1)
 
     def _get_state(self, player_index: int) -> np.ndarray:
         """
-        Compute the full state representation for the current player.
-        The state is the concatenation of the flattened board grid (15x15) and the hand encoding.
-
+        Generate the state vector for the given player.
+        The state is the concatenation of:
+          - Board state: fixed-size encoding of up to 100 board cards.
+          - Hand state: encoding of the current player's hand (6 cards).
+        
         Args:
-            player_index (int): The index of the current player.
-
+            player_index (int): Index of the current player.
+        
         Returns:
-            np.ndarray: The state vector (length = 225 + hand_size).
+            np.ndarray: State vector of shape (STATE_SIZE,).
         """
-        board_state = self._get_board_state()
-        hand_state = self._get_hand_state(player_index)
+        # Encode board state: sort env.board by (x,y), encode each card using its features.
+        board_cards = list(self.env.board.values())
+        board_cards.sort(key=lambda c: ((c.x if c.x is not None else 0), (c.y if c.y is not None else 0)))
+        board_encodings = []
+        # Assume we have a function to encode a card into a vector of length CARD_FEATURES.
+        # For this example, we implement a simple encoder inline.
+        def encode_card(card) -> np.ndarray:
+            # Position (x, y) as floats (if None, use 0). We do not normalize here.
+            x = card.x if card.x is not None else 0.0
+            y = card.y if card.y is not None else 0.0
+            pos = [x, y]
+            # Edge types: for each edge, one-hot encoding for [wall, path, dead-end]
+            edge_order = ["top", "right", "bottom", "left"]
+            edge_enc = []
+            for edge in edge_order:
+                if card.edges.get(edge, "wall") == "wall":
+                    edge_enc.extend([1, 0, 0])
+                elif card.edges.get(edge, "wall") in ("path", "dead-end"):
+                    # Use [0,1,0] for path and [0,1,0] for dead-end (treat them similarly) 
+                    edge_enc.extend([0, 1, 0])
+                else:
+                    edge_enc.extend([1, 0, 0])
+            # Connection info: 6 binary values for fixed pairs (e.g., sorted lexicographically)
+            possible_connections = [("left","right"), ("left","top"), ("left","bottom"),
+                                    ("right","top"), ("right","bottom"), ("top","bottom")]
+            conn_enc = [1 if pair in card.connections else 0 for pair in possible_connections]
+            # Special flags: hidden goal flag and start flag.
+            hidden_goal = 1 if (card.type == "goal" and card.hidden) else 0
+            start_flag = 1 if card.type == "start" else 0
+            flags = [hidden_goal, start_flag]
+            return np.array(pos + edge_enc + conn_enc + flags, dtype=np.float32)
+        for card in board_cards[:MAX_BOARD_CARDS]:
+            board_encodings.append(encode_card(card))
+        # Pad if necessary.
+        while len(board_encodings) < MAX_BOARD_CARDS:
+            board_encodings.append(np.zeros(CARD_FEATURES, dtype=np.float32))
+        board_state = np.concatenate(board_encodings)
+        # Encode hand state.
+        hand = self.env.player_hands[player_index]
+        hand_encodings = []
+        for card in hand:
+            hand_encodings.append(encode_card(card))
+        while len(hand_encodings) < self.hand_size:
+            hand_encodings.append(np.zeros(CARD_FEATURES, dtype=np.float32))
+        hand_state = np.concatenate(hand_encodings)
         return np.concatenate([board_state, hand_state])
 
-    def _map_action(self, action_index: int) -> tuple[int, tuple[int, int], int]:
+    def _snap_to_valid(self, card: any, desired: tuple[float, float], orientation: int) -> tuple[float, float]:
         """
-        Map a discrete action index to a game action.
-        The mapping is as follows:
-          - card_index = action_index // (grid_size*grid_size*2)
-          - remainder = action_index % (grid_size*grid_size*2)
-          - x_index = remainder // (grid_size*2)
-          - remainder2 = remainder % (grid_size*2)
-          - y_index = remainder2 // 2
-          - orientation = remainder2 % 2  (0 => 0°, 1 => 180°)
-        The board cell (x_index, y_index) is mapped to board coordinates by subtracting (grid_size//2).
+        Given a card and a desired (x, y) continuous output, snap to the closest valid placement.
+        Uses env.get_valid_placements(card) to get a list of valid positions.
+        If none are available, returns (0.0, 0.0) (which signals a skip).
         
         Args:
-            action_index (int): The chosen discrete action.
+            card: The card object.
+            desired (tuple[float, float]): Desired (x, y) output from the network.
+            orientation (int): The chosen orientation.
         
         Returns:
-            tuple[int, tuple[int, int], int]: (card_index, board position, orientation)
+            tuple[float, float]: The valid placement (snapped) coordinates.
         """
-        H = self.hand_size
-        N = self.grid_size  # 15
-        total_per_card = N * N * 2
-        card_index = action_index // total_per_card
-        remainder = action_index % total_per_card
-        x_index = remainder // (N * 2)
-        remainder2 = remainder % (N * 2)
-        y_index = remainder2 // 2
-        orientation = remainder2 % 2
-        # Map x_index, y_index (0..N-1) to board coordinates: subtract offset.
-        offset = N // 2
-        board_x = x_index - offset
-        board_y = y_index - offset
-        return (card_index, (board_x, board_y), orientation)
+        valid_positions = self.env.get_valid_placements(card)
+        if not valid_positions:
+            return (0.0, 0.0)
+        # Compute Euclidean distance to desired point.
+        distances = [np.linalg.norm(np.array(pos) - np.array(desired)) for pos in valid_positions]
+        min_idx = int(np.argmin(distances))
+        return valid_positions[min_idx]
 
-    def act(self, player_index: int) -> tuple[int, tuple[int, int], int]:
+    def act(self, player_index: int) -> tuple[int, tuple[float, float], int]:
         """
-        Choose an action using the DQN with epsilon-greedy policy.
-
+        Select an action using the policy network with epsilon-greedy exploration.
+        The network outputs:
+          - card_logits: distribution over hand cards.
+          - coord_output: continuous (x, y) output.
+          - orientation_logits: distribution over orientations.
+        The chosen continuous coordinate is snapped to the nearest valid placement for the chosen card.
+        If no valid placement exists, returns a skip action (-1, (0.0, 0.0), 0).
+        
         Args:
             player_index (int): The index of the current player.
         
         Returns:
-            tuple[int, tuple[int, int], int]: The chosen game action.
+            tuple[int, tuple[float, float], int]: (card_index, (x, y), orientation)
         """
         state = self._get_state(player_index)
-        # Use torch.from_numpy to convert state to tensor.
         state_tensor = torch.from_numpy(state).unsqueeze(0).float()
-        if np.random.rand() < self.epsilon:
-            # Random action
-            action_index = random.randrange(self.action_size)
+        # Epsilon-greedy exploration.
+        if random.random() < self.epsilon:
+            card_index = random.randrange(self.hand_size)
+            # For continuous part, sample uniformly in [-10, 10].
+            coord = (random.uniform(-10, 10), random.uniform(-10, 10))
+            orientation = random.randrange(2)
         else:
             with torch.no_grad():
-                q_values = self.policy_net(state_tensor)
-            action_index = int(torch.argmax(q_values, dim=1).item())
-        return self._map_action(action_index)
+                card_logits, coord_output, orient_logits = self.policy_net(state_tensor)
+            card_index = int(torch.argmax(card_logits, dim=1).item())
+            # coord_output is a 2-dim tensor.
+            coord = tuple(coord_output.squeeze(0).tolist())
+            orientation = int(torch.argmax(orient_logits, dim=1).item())
+        # Get the selected card.
+        hand = self.env.player_hands[player_index]
+        if card_index >= len(hand):
+            # Fallback: skip action.
+            return (-1, (0.0, 0.0), 0)
+        selected_card = hand[card_index]
+        # Snap the continuous coordinate to the closest valid placement.
+        snapped_coord = self._snap_to_valid(selected_card, coord, orientation)
+        # If no valid placement found, return skip.
+        if snapped_coord == (0.0, 0.0):
+            return (-1, (0.0, 0.0), 0)
+        return (card_index, snapped_coord, orientation)

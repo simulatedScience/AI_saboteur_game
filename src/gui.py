@@ -8,9 +8,7 @@ The board is draggable via right-click, and valid placement positions are outlin
 """
 
 # Standard library imports
-import random
 import tkinter as tk
-from typing import Any
 
 # Third-party imports
 
