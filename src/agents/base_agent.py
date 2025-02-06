@@ -4,9 +4,7 @@ This module defines AI agents for the Saboteur game.
 Agents follow a common interface via the act() method.
 """
 
-import random
 from ..saboteur_env import SaboteurEnv
-from ..cards import Card
 
 class BaseAgent:
     def __init__(self, env: SaboteurEnv) -> None:

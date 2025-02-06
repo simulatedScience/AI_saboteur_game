@@ -49,7 +49,7 @@ AI Config:
 {AI_CONFIG}
 
 State Dimension: {STATE_SIZE}
-Action Space: MultiDiscrete([hand_size={CONFIG.get("hand_size",6)}, {COORD_RES}, {COORD_RES}, 2])
+Action Space: MultiDiscrete([hand_size={CONFIG["hand_size"]}, {COORD_RES}, {COORD_RES}, 2])
 """
     with open(os.path.join(folder, "training_info.md"), "w") as f:
         f.write(info_text)
@@ -64,7 +64,7 @@ def train() -> None:
     save_training_info(run_folder)
     
     # Number of parallel environments (set in AI_CONFIG; default to 8 if not provided)
-    n_envs: int = AI_CONFIG.get("n_envs", 16)
+    n_envs: int = AI_CONFIG["n_envs"]
     
     # Create vectorized environment: each env is wrapped with ActionMasker.
     def make_env() -> gym.Env:
@@ -78,8 +78,9 @@ def train() -> None:
         "MlpPolicy",
         vec_env,
         verbose=1,
-        batch_size=AI_CONFIG.get("batch_size", 1024),
+        batch_size=AI_CONFIG["batch_size"],
         tensorboard_log=os.path.join(run_folder, "tensorboard"),
+        device=AI_CONFIG["device"],
     )
     
     # Create evaluation environment (vectorized with 1 env) for evaluation callback.
@@ -89,7 +90,7 @@ def train() -> None:
         best_model_save_path=run_folder,
         log_path=run_folder,
         eval_freq=10000,
-        n_eval_episodes=3,
+        n_eval_episodes=AI_CONFIG["n_eval_episodes"],
         deterministic=True,
         render=False
     )
@@ -98,7 +99,7 @@ def train() -> None:
         save_path=run_folder,
         name_prefix="checkpoint"
     )
-    total_timesteps: int = AI_CONFIG.get("timesteps", 100_000)
+    total_timesteps: int = AI_CONFIG["timesteps"]
     model.learn(
         total_timesteps=total_timesteps,
         callback=[eval_callback, checkpoint_callback]
@@ -107,4 +108,11 @@ def train() -> None:
     vec_env.close()
 
 if __name__ == "__main__":
+    import cProfile
+    import pstats
+    profile = cProfile.Profile()
+    profile.enable()
     train()
+    profile.disable()
+    stats = pstats.Stats(profile).sort_stats('tottime')
+    stats.print_stats(30)
