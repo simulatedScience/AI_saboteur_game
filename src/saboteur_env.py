@@ -1,9 +1,9 @@
 # saboteur_env.py
 """
 This module implements the Saboteur environment with advanced connectivity checking,
-skip actions, and reward assignment. Connectivity is determined using each card's
-internal connections property. This module uses Python 3.11 built‑in typehints for
-all function signatures.
+skip actions, and reward assignment. Connectivity is now maintained using an
+incremental graph that is updated whenever a new card is placed.
+This module uses Python 3.11 built‑in typehints for all function signatures.
 
 Author: OpenAI-o3-mini
 """
@@ -21,29 +21,35 @@ from gymnasium import spaces
 from .config import CONFIG, AI_CONFIG
 from .cards import Card, load_deck, calculate_connections
 
+# Global constants for directions and allowed pairs.
+DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
+    "top": (0, -1),
+    "bottom": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0)
+}
 
-def get_opposite_edge(edge: str) -> str:
-    """
-    Return the opposite edge for a given edge.
+OPPOSITE_EDGE: dict[str, str] = {
+    "top": "bottom",
+    "bottom": "top",
+    "left": "right",
+    "right": "left"
+}
 
-    Args:
-        edge (str): One of "top", "right", "bottom", "left".
-
-    Returns:
-        str: The opposite edge.
-    """
-    opposites: dict[str, str] = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
-    return opposites.get(edge, "")
+# For placement compatibility we require that touching edges be both "path" or
+# (in our rules) we allow ("path", "dead-end") or ("dead-end", "path") as equivalent.
+ALLOWED_PAIRS: set[tuple[str, str]] = {("path", "path"), ("path", "dead-end"), ("dead-end", "path"), ("wall", "wall")}
 
 
 class SaboteurEnv(gym.Env):
     """
     Saboteur environment implementing placement rules, connectivity checking using
-    card connections, skip actions, and reward assignment.
+    an incremental graph, skip actions, and reward assignment.
 
     Attributes:
         num_players (int): Number of players.
         board (dict[tuple[int, int], Card]): Mapping of board positions to placed cards.
+        graph (dict[tuple[int, int], set[tuple[int, int]]]): Connectivity graph over board positions.
         start_position (tuple[int, int]): Fixed starting tile position.
         deck (list[Card]): The deck of cards.
         player_hands (dict[int, list[Card]]): Cards in hand for each player.
@@ -65,8 +71,9 @@ class SaboteurEnv(gym.Env):
         super().__init__()
         self.num_players: int = num_players if num_players is not None else CONFIG["num_players"]
         self.board: dict[tuple[int, int], Card] = {}
+        self.graph: dict[tuple[int, int], set[tuple[int, int]]] = {}  # incremental connectivity graph
         self.start_position: tuple[int, int] = (0, 0)
-        self.action_space = spaces.Discrete(10)
+        self.action_space = spaces.Discrete(10)  # Dummy; actions are handled externally.
         self.observation_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.int8)
         self.done: bool = False
         self.info: dict[str, any] = {}
@@ -81,6 +88,12 @@ class SaboteurEnv(gym.Env):
             player_idx: [self.deck.pop() for _ in range(CONFIG["hand_size"])]
             for player_idx in range(self.num_players)
         }
+        # Initialize connectivity graph with the start tile.
+        start_card: Card = self.board[self.start_position]
+        self.graph = {self.start_position: set()}
+        for edge in ("top", "right", "bottom", "left"):
+            if start_card.edges.get(edge, "wall") != "wall":
+                self.graph[self.start_position].add(edge)  # we store the edge label for debugging
 
     def _create_initial_board(self) -> None:
         """
@@ -88,10 +101,14 @@ class SaboteurEnv(gym.Env):
         The start tile is a four-way tile (all edges "path") and the goal cards start hidden.
         """
         self.board.clear()
+        self.graph.clear()
         start_edges: dict[str, str] = {"top": "path", "right": "path", "bottom": "path", "left": "path"}
         start_card: Card = Card("start", x=0, y=0, edges=start_edges)
         self.board[(0, 0)] = start_card
         self.start_position = (0, 0)
+
+        # Add the start position to the connectivity graph.
+        self.graph[(0, 0)] = set()  # Initially empty; connectivity will be updated on placement
 
         goal_positions: list[tuple[int, int]] = [(8, 0), (8, 2), (8, -2)]
         gold_index: int = random.randint(0, len(goal_positions) - 1)
@@ -108,15 +125,16 @@ class SaboteurEnv(gym.Env):
             goal_card.hidden = True
             self.board[pos] = goal_card
 
-    def reset(self,
-            seed: int = None,
-            options: dict = {},
-            ) -> tuple[np.ndarray, dict[str, any]]:
+    def reset(self, seed: int = None, options: dict = {}) -> tuple[np.ndarray, dict[str, any]]:
         """
         Reset the environment to the initial state.
 
+        Args:
+            seed (int, optional): Random seed.
+            options (dict, optional): Additional options.
+        
         Returns:
-            tuple: A dummy observation and an empty info dict.
+            tuple: A dummy observation and an info dict.
         """
         if options:
             for key, value in options.items():
@@ -134,6 +152,12 @@ class SaboteurEnv(gym.Env):
             player_idx: [self.deck.pop() for _ in range(CONFIG["hand_size"])]
             for player_idx in range(self.num_players)
         }
+        # Reinitialize connectivity graph for the start tile.
+        start_card: Card = self.board[self.start_position]
+        self.graph = {self.start_position: set()}
+        for edge in ("top", "right", "bottom", "left"):
+            if start_card.edges.get(edge, "wall") != "wall":
+                self.graph[self.start_position].add(edge)
         return self._get_obs(), {}
 
     def _get_obs(self) -> np.ndarray:
@@ -145,109 +169,12 @@ class SaboteurEnv(gym.Env):
         """
         return np.array([0])
 
-    def _propagate_internal(self, card: Card, initial_edges: set[str]) -> set[str]:
-        """
-        Given a card and an initial set of reachable edges, propagate internal connectivity
-        using the card's connections property.
-
-        Args:
-            card (Card): The card whose internal connections to use.
-            initial_edges (set[str]): The initial set of reachable edges.
-
-        Returns:
-            set[str]: The full set of reachable edges on the card.
-        """
-        reachable: set[str] = set(initial_edges)
-        changed: bool = True
-        while changed:
-            changed = False
-            for conn in card.connections:
-                # Each connection is a sorted tuple (e1, e2) with e1 < e2.
-                e1, e2 = conn
-                if e1 in reachable and e2 not in reachable:
-                    reachable.add(e2)
-                    changed = True
-                if e2 in reachable and e1 not in reachable:
-                    reachable.add(e1)
-                    changed = True
-        return reachable
-
-    def compute_reachable_edges(self) -> dict[tuple[int, int], set[str]]:
-        """
-        Compute the reachable edges for each card on the board starting from the start tile.
-        Connectivity is propagated using each card's internal connections.
-
-        Returns:
-            dict[tuple[int, int], set[str]]: Mapping from board positions to the set of edges
-                that are connected to the start tile.
-        """
-        reachable_edges: dict[tuple[int, int], set[str]] = {}
-        for pos in self.board.keys():
-            reachable_edges[pos] = set()
-
-        # Initialize the start tile with all non-wall edges.
-        start_card: Card = self.board[self.start_position]
-        initial: set[str] = {edge for edge in ("top", "right", "bottom", "left") if start_card.edges[edge] != "wall"}
-        reachable_edges[self.start_position] = self._propagate_internal(start_card, initial)
-
-        # Propagate connectivity via BFS.
-        queue: deque[tuple[int, int]] = deque([self.start_position])
-        visited: set[tuple[int, int]] = {self.start_position}
-
-        while queue:
-            pos: tuple[int, int] = queue.popleft()
-            current_card: Card = self.board[pos]
-            for edge in reachable_edges[pos]:
-                # Determine adjacent cell based on current edge.
-                delta: tuple[int, int]
-                if edge == "top":
-                    delta = (0, -1)
-                elif edge == "bottom":
-                    delta = (0, 1)
-                elif edge == "left":
-                    delta = (-1, 0)
-                elif edge == "right":
-                    delta = (1, 0)
-                else:
-                    continue
-
-                neighbor_pos: tuple[int, int] = (pos[0] + delta[0], pos[1] + delta[1])
-                if neighbor_pos not in self.board:
-                    continue
-                neighbor: Card = self.board[neighbor_pos]
-                neighbor_edge: str = get_opposite_edge(edge)
-                if neighbor.edges[neighbor_edge] == "wall":
-                    continue
-                initial_neighbor: set[str] = {neighbor_edge}
-                new_reachable: set[str] = self._propagate_internal(neighbor, initial_neighbor)
-                if not new_reachable.issubset(reachable_edges[neighbor_pos]):
-                    reachable_edges[neighbor_pos].update(new_reachable)
-                    if neighbor_pos not in visited:
-                        queue.append(neighbor_pos)
-                        visited.add(neighbor_pos)
-        return reachable_edges
-
-    def can_reach(self, target_pos: tuple[int, int]) -> bool:
-        """
-        Determine if the card at target_pos is connected to the start tile via internal card connections.
-
-        Args:
-            target_pos (tuple[int, int]): The board position to test.
-
-        Returns:
-            bool: True if there is a continuous connection from the start tile, False otherwise.
-        """
-        if target_pos not in self.board:
-            return False
-        reachable: dict[tuple[int, int], set[str]] = self.compute_reachable_edges()
-        return bool(reachable.get(target_pos, set()))
-
     def _is_valid_placement(self, card: Card, pos: tuple[int, int]) -> bool:
         """
         Test whether placing the given card at pos is valid. Checks that:
           1. pos is empty and adjacent to an existing card.
           2. For each non-goal neighbor, the touching edges form an allowed pair.
-          3. The new placement yields connectivity from the start tile.
+          3. The new placement, when simulated, is connected to the start tile.
 
         Args:
             card (Card): The card to be placed.
@@ -262,55 +189,39 @@ class SaboteurEnv(gym.Env):
             return False
 
         x, y = pos
+        # Check edge compatibility with neighbors.
         for npos in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
             if npos in self.board:
                 neighbor: Card = self.board[npos]
                 if npos[0] - x == 1:
-                    my_edge, neighbor_edge = card.edges["right"], neighbor.edges["left"]
+                    my_edge, neighbor_edge = card.edges.get("right", "wall"), neighbor.edges.get("left", "wall")
                 elif npos[0] - x == -1:
-                    my_edge, neighbor_edge = card.edges["left"], neighbor.edges["right"]
+                    my_edge, neighbor_edge = card.edges.get("left", "wall"), neighbor.edges.get("right", "wall")
                 elif npos[1] - y == 1:
-                    my_edge, neighbor_edge = card.edges["bottom"], neighbor.edges["top"]
+                    my_edge, neighbor_edge = card.edges.get("bottom", "wall"), neighbor.edges.get("top", "wall")
                 elif npos[1] - y == -1:
-                    my_edge, neighbor_edge = card.edges["top"], neighbor.edges["bottom"]
+                    my_edge, neighbor_edge = card.edges.get("top", "wall"), neighbor.edges.get("bottom", "wall")
                 else:
                     continue
                 if neighbor.type != "goal":
-                    allowed: set[tuple[str, str]] = {("path", "path"), ("path", "dead-end"), ("dead-end", "path"), ("wall", "wall")}
-                    if (my_edge, neighbor_edge) not in allowed:
+                    if (my_edge, neighbor_edge) not in ALLOWED_PAIRS:
                         return False
 
-        # Temporarily add the card to check connectivity.
+        # Simulate placing the card: add it temporarily and update connectivity graph.
         self.board[pos] = card
-        is_connected: bool = self.can_reach(pos)
+        # Create a temporary graph copy for simulation.
+        temp_graph = {node: neighbors.copy() for node, neighbors in self.graph.items()}
+        self._simulate_update_connectivity(pos, card, temp_graph)
+        is_connected = self._simulate_can_reach(pos, temp_graph)
         del self.board[pos]
         return is_connected
-
-    def get_valid_placements(self, card: Card) -> list[tuple[int, int]]:
-        """
-        Compute all board positions where the given card (with its current orientation)
-        can be legally placed.
-
-        Args:
-            card (Card): The card to test.
-
-        Returns:
-            list[tuple[int, int]]: Valid board positions.
-        """
-        candidate_positions: set[tuple[int, int]] = set()
-        for (x, y) in self.board.keys():
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                pos: tuple[int, int] = (x + dx, y + dy)
-                if pos not in self.board:
-                    candidate_positions.add(pos)
-        return [pos for pos in candidate_positions if self._is_valid_placement(card, pos)]
 
     def is_adjacent_to_board(self, pos: tuple[int, int]) -> bool:
         """
         Check if the given position is adjacent to any card on the board.
 
         Args:
-            pos (tuple[int, int]): The board position to check.
+            pos (tuple[int, int]): The board position.
 
         Returns:
             bool: True if at least one neighbor exists, False otherwise.
@@ -321,17 +232,149 @@ class SaboteurEnv(gym.Env):
                 return True
         return False
 
+    def _simulate_update_connectivity(self, pos: tuple[int, int], card: Card, graph: dict[tuple[int, int], set[tuple[int, int]]]) -> None:
+        """
+        Simulate the connectivity graph update for a new card placed at pos.
+        For each neighbor that exists in the board, if the card and neighbor connect,
+        add a bidirectional edge in the temporary graph.
+        
+        Args:
+            pos (tuple[int, int]): The position of the new card.
+            card (Card): The new card.
+            graph (dict): The temporary connectivity graph to update.
+        """
+        graph[pos] = set()
+        x, y = pos
+        for direction, delta in DIRECTION_DELTAS.items():
+            neighbor_pos = (x + delta[0], y + delta[1])
+            if neighbor_pos in self.board:
+                neighbor = self.board[neighbor_pos]
+                my_edge = card.edges.get(direction, "wall")
+                neighbor_edge = neighbor.edges.get(OPPOSITE_EDGE[direction], "wall")
+                if (my_edge, neighbor_edge) in ALLOWED_PAIRS:
+                    graph[pos].add(neighbor_pos)
+                    if neighbor_pos in graph:
+                        graph[neighbor_pos].add(pos)
+                    else:
+                        graph[neighbor_pos] = {pos}
+
+    def _simulate_can_reach(self, target_pos: tuple[int, int], graph: dict[tuple[int, int], set[tuple[int, int]]]) -> bool:
+        """
+        Simulate a DFS on the temporary connectivity graph to check if target_pos is reachable from start_position.
+        
+        Args:
+            target_pos (tuple[int, int]): The board position to test.
+            graph (dict): The temporary connectivity graph.
+        
+        Returns:
+            bool: True if target_pos is reachable, False otherwise.
+        """
+        if self.start_position not in graph:
+            return False
+        queue: deque[tuple[int, int]] = deque([self.start_position])
+        visited: set[tuple[int, int]] = {self.start_position}
+        while queue:
+            current = queue.popleft()
+            if current == target_pos:
+                return True
+            for neighbor in graph.get(current, set()):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        return False
+
+    def _update_connectivity(self, pos: tuple[int, int], card: Card) -> None:
+        """
+        Update the global connectivity graph (self.graph) after placing a card at pos.
+        This function checks all four neighbors and, if connectivity exists, adds bidirectional edges.
+        
+        Args:
+            pos (tuple[int, int]): The position of the newly placed card.
+            card (Card): The newly placed card.
+        """
+        self.graph[pos] = set()
+        x, y = pos
+        for direction, delta in DIRECTION_DELTAS.items():
+            neighbor_pos = (x + delta[0], y + delta[1])
+            if neighbor_pos in self.board:
+                neighbor = self.board[neighbor_pos]
+                my_edge = card.edges.get(direction, "wall")
+                neighbor_edge = neighbor.edges.get(OPPOSITE_EDGE[direction], "wall")
+                if (my_edge, neighbor_edge) in ALLOWED_PAIRS:
+                    self.graph[pos].add(neighbor_pos)
+                    if neighbor_pos in self.graph:
+                        self.graph[neighbor_pos].add(pos)
+                    else:
+                        self.graph[neighbor_pos] = {pos}
+
+    def _update_reachable_after_placement(self, pos: tuple[int, int], card: Card) -> None:
+        """
+        Update the incremental connectivity graph after placing a card at pos.
+        This method first updates the connectivity graph (self.graph) using _update_connectivity,
+        then it does a DFS from the start tile to update a set self.reachable of reachable positions.
+        
+        Args:
+            pos (tuple[int, int]): The position of the new card.
+            card (Card): The new card.
+        """
+        self._update_connectivity(pos, card)
+        # Recompute reachable nodes from the start using the graph.
+        new_reachable: set[tuple[int, int]] = set()
+        queue: deque[tuple[int, int]] = deque([self.start_position])
+        while queue:
+            current = queue.popleft()
+            if current in new_reachable:
+                continue
+            new_reachable.add(current)
+            for neighbor in self.graph.get(current, set()):
+                if neighbor not in new_reachable:
+                    queue.append(neighbor)
+        # Save the reachable positions in self.reachable (as a dict mapping node -> dummy value)
+        self.reachable = {node: None for node in new_reachable}
+
+    def can_reach(self, target_pos: tuple[int, int]) -> bool:
+        """
+        Determine if the card at target_pos is connected to the start tile using the connectivity graph.
+        
+        Args:
+            target_pos (tuple[int, int]): The board position to test.
+        
+        Returns:
+            bool: True if target_pos is in self.reachable, False otherwise.
+        """
+        return target_pos in self.reachable
+
+    def get_valid_placements(self, card: Card) -> list[tuple[int, int]]:
+        """
+        Compute all board positions where the given card (with its current orientation)
+        can be legally placed.
+        
+        Args:
+            card (Card): The card to test.
+        
+        Returns:
+            list[tuple[int, int]]: Valid board positions.
+        """
+        candidate_positions: set[tuple[int, int]] = set()
+        for (x, y) in self.board.keys():
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                pos: tuple[int, int] = (x + dx, y + dy)
+                if pos not in self.board:
+                    candidate_positions.add(pos)
+        valid_positions = [pos for pos in candidate_positions if self._is_valid_placement(card, pos)]
+        return valid_positions
+
     def place_card(self, card: Card, pos: tuple[int, int]) -> bool:
         """
         Attempt to place the given card at pos. If valid, adds the card to the board and
         uncovers any adjacent hidden goal card (gold or coal) that is connected via a "path" edge.
         For coal goals, if the touching edge is not "path", rotate the coal card once so that it becomes "path",
         then update its connections accordingly.
-
+        
         Args:
             card (Card): The card to be placed.
             pos (tuple[int, int]): The target board position.
-
+        
         Returns:
             bool: True if placement is successful, False otherwise.
         """
@@ -346,41 +389,38 @@ class SaboteurEnv(gym.Env):
             if npos in self.board:
                 neighbor: Card = self.board[npos]
                 if neighbor.type == "goal" and neighbor.hidden:
-                    # Determine the touching edges.
                     if npos[0] - x == 1:
-                        my_edge = card.edges["right"]
-                        neighbor_edge = neighbor.edges["left"]
+                        my_edge = card.edges.get("right", "wall")
+                        neighbor_edge = neighbor.edges.get("left", "wall")
                     elif npos[0] - x == -1:
-                        my_edge = card.edges["left"]
-                        neighbor_edge = neighbor.edges["right"]
+                        my_edge = card.edges.get("left", "wall")
+                        neighbor_edge = neighbor.edges.get("right", "wall")
                     elif npos[1] - y == 1:
-                        my_edge = card.edges["bottom"]
-                        neighbor_edge = neighbor.edges["top"]
+                        my_edge = card.edges.get("bottom", "wall")
+                        neighbor_edge = neighbor.edges.get("top", "wall")
                     elif npos[1] - y == -1:
-                        my_edge = card.edges["top"]
-                        neighbor_edge = neighbor.edges["bottom"]
+                        my_edge = card.edges.get("top", "wall")
+                        neighbor_edge = neighbor.edges.get("bottom", "wall")
                     else:
                         continue
                     if my_edge == "path":
                         if neighbor.goal_type == "coal":
-                            # If the neighbor's touching edge is not "path", rotate the coal card once.
                             if neighbor_edge != "path":
                                 neighbor.rotate()
-                                # Update neighbor_edge after rotation.
                                 if npos[0] - x == 1:
-                                    neighbor_edge = neighbor.edges["left"]
+                                    neighbor_edge = neighbor.edges.get("left", "wall")
                                 elif npos[0] - x == -1:
-                                    neighbor_edge = neighbor.edges["right"]
+                                    neighbor_edge = neighbor.edges.get("right", "wall")
                                 elif npos[1] - y == 1:
-                                    neighbor_edge = neighbor.edges["top"]
+                                    neighbor_edge = neighbor.edges.get("top", "wall")
                                 elif npos[1] - y == -1:
-                                    neighbor_edge = neighbor.edges["bottom"]
-                        # In both coal and gold cases, update connections.
+                                    neighbor_edge = neighbor.edges.get("bottom", "wall")
                         neighbor.connections = calculate_connections(neighbor.edges)
                         neighbor.hidden = False
+
+        # Update the connectivity graph incrementally.
+        self._update_reachable_after_placement(pos, card)
         return True
-
-
 
     def compute_final_rewards(self) -> dict[tuple, int]:
         """
@@ -392,7 +432,6 @@ class SaboteurEnv(gym.Env):
         Returns:
             dict: Mapping from player index to reward.
         """
-        # Get configuration for final rewards.
         winner_reward: int = AI_CONFIG.get("final_reward_winner", self.num_players)
         rewards: dict[tuple, int] = {}
         winning_player: int = self.last_valid_player if self.last_valid_player is not None else self.current_player
@@ -401,25 +440,23 @@ class SaboteurEnv(gym.Env):
             rewards[player] = max(winner_reward - i, 1)
         return rewards
 
-
     def step(self, action: tuple[int, tuple[int, int], int]) -> tuple[np.ndarray, int, bool, bool, dict[str, any]]:
         """
         Process an action.
-
+        
         The action is a tuple: (card_index, board position, orientation).
         If card_index is -1, the player skips their turn.
         Invalid actions are penalized with -20.
         On a valid move, if the game ends, final rewards are computed.
-
+        
         Args:
             action (tuple[int, tuple[int, int], int]): The action tuple.
-
+        
         Returns:
             tuple: (observation, reward, done flag, truncated flag, info dict)
         """
         card_index, pos, orientation = action
 
-        # Skip turn action.
         if card_index == -1:
             self.consecutive_skips += 1
             self.current_player = (self.current_player + 1) % self.num_players
@@ -428,7 +465,7 @@ class SaboteurEnv(gym.Env):
                 self.info["final_rewards"] = self.compute_final_rewards()
             return self._get_obs(), 0, self.done, False, self.info
 
-        current_hand: list[Card] = self.player_hands[self.current_player]
+        current_hand: list[Card] = self.player_hands[self.env_current_player()]
         if card_index < 0 or card_index >= len(current_hand):
             print(f"Invalid card index: {card_index}")
             return self._get_obs(), -20, self.done, False, self.info
@@ -442,17 +479,14 @@ class SaboteurEnv(gym.Env):
             print(f"Invalid card placement at x={pos[0]}, y={pos[1]}")
             return self._get_obs(), -20, self.done, False, self.info
 
-        # Valid move: reset consecutive skip counter.
         self.consecutive_skips = 0
         self.last_valid_player = self.current_player
 
-        # Remove the played card and draw a new one if available.
         del current_hand[card_index]
         if self.deck:
             new_card: Card = self.deck.pop()
             current_hand.append(new_card)
 
-        # Check termination conditions.
         all_hands_empty: bool = all(len(hand) == 0 for hand in self.player_hands.values())
         gold_reached: bool = False
         for board_pos, card in self.board.items():
@@ -470,10 +504,19 @@ class SaboteurEnv(gym.Env):
 
         return self._get_obs(), 0, self.done, False, self.info
 
+    def _get_obs(self) -> np.ndarray:
+        """
+        Return a dummy observation.
+        
+        Returns:
+            np.ndarray: Dummy observation.
+        """
+        return np.array([0])
+
     def render(self, mode: str = "human") -> None:
         """
         Render the board state to the console for debugging.
-
+        
         Args:
             mode (str, optional): The render mode. Defaults to "human".
         """
@@ -484,6 +527,17 @@ class SaboteurEnv(gym.Env):
         for player, hand in self.player_hands.items():
             print(f"Player {player} hand: {hand}")
 
+def env_current_player(self) -> int:
+    """
+    Helper function to return the current player index.
+    
+    Returns:
+        int: The current player.
+    """
+    return self.current_player
+
+# Attach helper as a method.
+SaboteurEnv.env_current_player = env_current_player
 
 if __name__ == "__main__":
     env = SaboteurEnv()
