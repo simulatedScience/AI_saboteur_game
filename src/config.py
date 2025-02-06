@@ -42,9 +42,9 @@ CONFIG = {
 AI_CONFIG = {
     'learning_rate': 0.0001,  # Learning rate
     'gamma': 0.99,  # Discount factor
-    'timesteps': 1000,  # Number of timesteps to train
-    'batch_size': 100,  # Batch size
-    'n_envs': 5,  # Number of parallel environments
+    'timesteps': 1024,  # Number of timesteps to train
+    'batch_size': 128,  # Batch size
+    'n_envs': 8,  # Number of parallel environments
     'device': 'cpu', # Device to use for training ('cuda' or 'cpu')
     'n_eval_episodes': 3,  # Number of episodes to evaluate
 

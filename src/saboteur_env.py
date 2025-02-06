@@ -92,7 +92,7 @@ class SaboteurEnv(gym.Env):
         start_card: Card = self.board[self.start_position]
         self.graph = {self.start_position: set()}
         for edge in ("top", "right", "bottom", "left"):
-            if start_card.edges.get(edge, "wall") != "wall":
+            if start_card.edges[edge] != "wall":
                 self.graph[self.start_position].add(edge)  # we store the edge label for debugging
 
     def _create_initial_board(self) -> None:
@@ -156,7 +156,7 @@ class SaboteurEnv(gym.Env):
         start_card: Card = self.board[self.start_position]
         self.graph = {self.start_position: set()}
         for edge in ("top", "right", "bottom", "left"):
-            if start_card.edges.get(edge, "wall") != "wall":
+            if start_card.edges[edge] != "wall":
                 self.graph[self.start_position].add(edge)
         return self._get_obs(), {}
 
@@ -190,21 +190,21 @@ class SaboteurEnv(gym.Env):
 
         x, y = pos
         # Check edge compatibility with neighbors.
-        for npos in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if npos in self.board:
-                neighbor: Card = self.board[npos]
-                if npos[0] - x == 1:
-                    my_edge, neighbor_edge = card.edges.get("right", "wall"), neighbor.edges.get("left", "wall")
-                elif npos[0] - x == -1:
-                    my_edge, neighbor_edge = card.edges.get("left", "wall"), neighbor.edges.get("right", "wall")
-                elif npos[1] - y == 1:
-                    my_edge, neighbor_edge = card.edges.get("bottom", "wall"), neighbor.edges.get("top", "wall")
-                elif npos[1] - y == -1:
-                    my_edge, neighbor_edge = card.edges.get("top", "wall"), neighbor.edges.get("bottom", "wall")
+        for neighbor_pos in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if neighbor_pos in self.board:
+                neighbor: Card = self.board[neighbor_pos]
+                if neighbor_pos[0] - x == 1:
+                    new_edge, neighbor_edge = card.edges["right"], neighbor.edges["left"]
+                elif neighbor_pos[0] - x == -1:
+                    new_edge, neighbor_edge = card.edges["left"], neighbor.edges["right"]
+                elif neighbor_pos[1] - y == 1:
+                    new_edge, neighbor_edge = card.edges["bottom"], neighbor.edges["top"]
+                elif neighbor_pos[1] - y == -1:
+                    new_edge, neighbor_edge = card.edges["top"], neighbor.edges["bottom"]
                 else:
                     continue
                 if neighbor.type != "goal":
-                    if (my_edge, neighbor_edge) not in ALLOWED_PAIRS:
+                    if (new_edge, neighbor_edge) not in ALLOWED_PAIRS:
                         return False
 
         # Simulate placing the card: add it temporarily and update connectivity graph.
@@ -249,9 +249,9 @@ class SaboteurEnv(gym.Env):
             neighbor_pos = (x + delta[0], y + delta[1])
             if neighbor_pos in self.board:
                 neighbor = self.board[neighbor_pos]
-                my_edge = card.edges.get(direction, "wall")
-                neighbor_edge = neighbor.edges.get(OPPOSITE_EDGE[direction], "wall")
-                if (my_edge, neighbor_edge) in ALLOWED_PAIRS:
+                new_edge = card.edges[direction]
+                neighbor_edge = neighbor.edges[OPPOSITE_EDGE[direction]]
+                if (new_edge, neighbor_edge) in ALLOWED_PAIRS:
                     graph[pos].add(neighbor_pos)
                     if neighbor_pos in graph:
                         graph[neighbor_pos].add(pos)
@@ -298,9 +298,9 @@ class SaboteurEnv(gym.Env):
             neighbor_pos = (x + delta[0], y + delta[1])
             if neighbor_pos in self.board:
                 neighbor = self.board[neighbor_pos]
-                my_edge = card.edges.get(direction, "wall")
-                neighbor_edge = neighbor.edges.get(OPPOSITE_EDGE[direction], "wall")
-                if (my_edge, neighbor_edge) in ALLOWED_PAIRS:
+                new_edge = card.edges[direction]
+                neighbor_edge = neighbor.edges[OPPOSITE_EDGE[direction]]
+                if (new_edge, neighbor_edge) in ALLOWED_PAIRS:
                     self.graph[pos].add(neighbor_pos)
                     if neighbor_pos in self.graph:
                         self.graph[neighbor_pos].add(pos)
@@ -390,17 +390,17 @@ class SaboteurEnv(gym.Env):
                 neighbor: Card = self.board[npos]
                 if neighbor.type == "goal" and neighbor.hidden:
                     if npos[0] - x == 1:
-                        my_edge = card.edges.get("right", "wall")
-                        neighbor_edge = neighbor.edges.get("left", "wall")
+                        my_edge = card.edges["right"]
+                        neighbor_edge = neighbor.edges["left"]
                     elif npos[0] - x == -1:
-                        my_edge = card.edges.get("left", "wall")
-                        neighbor_edge = neighbor.edges.get("right", "wall")
+                        my_edge = card.edges["left"]
+                        neighbor_edge = neighbor.edges["right"]
                     elif npos[1] - y == 1:
-                        my_edge = card.edges.get("bottom", "wall")
-                        neighbor_edge = neighbor.edges.get("top", "wall")
+                        my_edge = card.edges["bottom"]
+                        neighbor_edge = neighbor.edges["top"]
                     elif npos[1] - y == -1:
-                        my_edge = card.edges.get("top", "wall")
-                        neighbor_edge = neighbor.edges.get("bottom", "wall")
+                        my_edge = card.edges["top"]
+                        neighbor_edge = neighbor.edges["bottom"]
                     else:
                         continue
                     if my_edge == "path":
@@ -408,13 +408,13 @@ class SaboteurEnv(gym.Env):
                             if neighbor_edge != "path":
                                 neighbor.rotate()
                                 if npos[0] - x == 1:
-                                    neighbor_edge = neighbor.edges.get("left", "wall")
+                                    neighbor_edge = neighbor.edges["left"]
                                 elif npos[0] - x == -1:
-                                    neighbor_edge = neighbor.edges.get("right", "wall")
+                                    neighbor_edge = neighbor.edges["right"]
                                 elif npos[1] - y == 1:
-                                    neighbor_edge = neighbor.edges.get("top", "wall")
+                                    neighbor_edge = neighbor.edges["top"]
                                 elif npos[1] - y == -1:
-                                    neighbor_edge = neighbor.edges.get("bottom", "wall")
+                                    neighbor_edge = neighbor.edges["bottom"]
                         neighbor.connections = calculate_connections(neighbor.edges)
                         neighbor.hidden = False
 

@@ -137,7 +137,7 @@ class SaboteurGUI:
         x, y = pixel
         x = (x - GUI_CONFIG['card_margin'] - self.board_offset_x) // (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + self.min_x
         y = (y - GUI_CONFIG['card_margin'] - self.board_offset_y) // (GUI_CONFIG['card_height'] + GUI_CONFIG['card_margin']) + self.min_y
-        print(f"Click at pixel ({x}, {y}) -> board ({x}, {y})")
+        # print(f"Click at pixel ({x}, {y}) -> board ({x}, {y})")
         return (x, y)
 
     def draw(self) -> None:
