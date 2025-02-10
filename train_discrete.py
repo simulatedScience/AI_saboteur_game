@@ -77,32 +77,34 @@ def train() -> None:
     model: MaskablePPO = MaskablePPO(
         "MlpPolicy",
         vec_env,
-        verbose=1,
+        verbose=2,
         batch_size=AI_CONFIG["batch_size"],
         tensorboard_log=os.path.join(run_folder, "tensorboard"),
         device=AI_CONFIG["device"],
+        n_steps=AI_CONFIG["n_steps"]
     )
     
     # Create evaluation environment (vectorized with 1 env) for evaluation callback.
-    eval_env = make_vec_env(make_env, n_envs=3)
-    eval_callback: MaskableEvalCallback = MaskableEvalCallback(
-        eval_env,
-        best_model_save_path=run_folder,
-        log_path=run_folder,
-        eval_freq=10000,
-        n_eval_episodes=AI_CONFIG["n_eval_episodes"],
-        deterministic=True,
-        render=False
-    )
+    # eval_env = make_vec_env(make_env, n_envs=3)
+    # eval_callback: MaskableEvalCallback = MaskableEvalCallback(
+    #     eval_env,
+    #     best_model_save_path=run_folder,
+    #     log_path=run_folder,
+    #     eval_freq=10000,
+    #     n_eval_episodes=AI_CONFIG["n_eval_episodes"],
+    #     deterministic=True,
+    #     render=False
+    # )
     checkpoint_callback: CheckpointCallback = CheckpointCallback(
-        save_freq=50000,
+        save_freq=10_000,
         save_path=run_folder,
-        name_prefix="checkpoint"
+        name_prefix="checkpoint",
     )
     total_timesteps: int = AI_CONFIG["timesteps"]
     model.learn(
         total_timesteps=total_timesteps,
-        callback=[eval_callback, checkpoint_callback]
+        log_interval=AI_CONFIG["log_interval"],
+        callback=[checkpoint_callback]
     )
     model.save(os.path.join(run_folder, "trained_model"))
     vec_env.close()
@@ -110,9 +112,12 @@ def train() -> None:
 if __name__ == "__main__":
     import cProfile
     import pstats
-    profile = cProfile.Profile()
-    profile.enable()
+    # profile = cProfile.Profile()
+    # profile.enable()
     train()
-    profile.disable()
-    stats = pstats.Stats(profile).sort_stats('tottime')
-    stats.print_stats(30)
+    # profile.disable()
+    # stats = pstats.Stats(profile).sort_stats('tottime')
+    # stats.print_stats(30)
+
+    # to see training data live in tensorboard run:
+    # tensorboard --logdir training_runs
