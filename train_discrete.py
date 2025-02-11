@@ -98,7 +98,7 @@ def train() -> None:
     checkpoint_callback: CheckpointCallback = CheckpointCallback(
         save_freq=10_000,
         save_path=run_folder,
-        name_prefix="checkpoint",
+        name_prefix="checkpoints/checkpoint",
     )
     total_timesteps: int = AI_CONFIG["timesteps"]
     model.learn(

@@ -1,31 +1,78 @@
 # gui.py
-
 """
 This module provides a graphical user interface (GUI) for the Saboteur card game.
 The GUI class renders the game board, player info, and current hand.
 It allows for card selection, rotation, and placement via the environment's step() method.
 The board is draggable via right-click, and valid placement positions are outlined.
+Now the GUI supports RL-agents in addition to rule-based and random agents.
 """
 
 # Standard library imports
+import os
 import tkinter as tk
+from datetime import datetime
+from typing import Optional
 
 # Third-party imports
 
 # Local imports
 from .saboteur_env import SaboteurEnv
 from .config import GUI_CONFIG, CONFIG
-from .cards import Card, get_random_edges, calculate_connections
+from .cards import Card, calculate_connections
 from .draw_card import draw_card
 from .agents.random_ai import RandomAgent
 from .agents.rule_based_ai import RuleBasedAgent
+# Import the RL agent wrapper (see rl_agent_wrapper.py below)
+from .agents.rl_agent_wrapper import RLAgentWrapper
+
+def find_rl_model_path(identifier: str) -> Optional[str]:
+    """
+    Search the 'training_runs' folder for a fully–trained RL model.
+    
+    If identifier is "RL-agent" (case-insensitive), then the latest folder (by folder name)
+    that contains a "trained_model.zip" file is selected.
+    Otherwise, if identifier is a date or datetime string, then the latest folder whose name
+    starts with that identifier is chosen.
+    
+    Args:
+        identifier (str): Either "RL-agent" or a date/datetime string.
+        
+    Returns:
+        Optional[str]: The path to the trained_model.zip file if found, else None.
+    """
+    base_folder = "training_runs"
+    if not os.path.exists(base_folder):
+        return None
+
+    folders = [f for f in os.listdir(base_folder)
+               if os.path.isdir(os.path.join(base_folder, f))]
+    # Filter folders that contain a trained_model.zip file.
+    valid_folders = []
+    for folder in folders:
+        model_path = os.path.join(base_folder, folder, "trained_model.zip")
+        if os.path.exists(model_path):
+            valid_folders.append(folder)
+    if not valid_folders:
+        return None
+
+    # If identifier equals "RL-agent", sort all valid folders in descending order.
+    if identifier.lower() == "rl-agent":
+        valid_folders.sort(reverse=True)
+    else:
+        # Otherwise, select folders whose name starts with identifier.
+        valid_folders = [f for f in valid_folders if f.startswith(identifier)]
+        valid_folders.sort(reverse=True)
+    if valid_folders:
+        chosen = valid_folders[0]
+        return os.path.join(base_folder, chosen, "trained_model.zip")
+    return None
 
 
 class SaboteurGUI:
     """
     GUI class that renders the game board, player info, and current hand.
     """
-    def __init__(self, env: SaboteurEnv, player_names: list[str] | None = None) -> None:
+    def __init__(self, env: SaboteurEnv, player_names: Optional[list[str]] = None) -> None:
         self.env: SaboteurEnv = env
         self.env.reset()
         self.root: tk.Tk = tk.Tk()
@@ -38,21 +85,33 @@ class SaboteurGUI:
             config_ai_types.append("human")
         
         self.agents: list[object | None] = []
-        # If player_names is provided, we override it with names plus AI type info.
-        self.player_names = []
+        self.player_names: list[str] = []
         for i in range(self.env.num_players):
             ai_type = config_ai_types[i]
-            if ai_type.lower() in ("random", "rule-based"):
-                # Create an agent accordingly.
-                if ai_type.lower() == "random":
-                    agent = RandomAgent(env)
+            ai_type_lower = ai_type.lower()
+            if ai_type_lower in ("random", "rule-based"):
+                if ai_type_lower == "random":
+                    agent = RandomAgent(self.env)
                 else:
-                    agent = RuleBasedAgent(env)
+                    agent = RuleBasedAgent(self.env)
                 self.agents.append(agent)
                 self.player_names.append(f"Player {i+1} ({ai_type.capitalize()})")
+            elif ai_type_lower.startswith("rl-agent") or ai_type_lower[0:8].isdigit():
+                # For RL agents, search for the latest trained model.
+                model_path = find_rl_model_path(ai_type)
+                if model_path is None:
+                    print(f"WARNING: No trained RL model found for identifier '{ai_type}'. Using random agent as fallback.")
+                    agent = RandomAgent(self.env)
+                    self.agents.append(agent)
+                    self.player_names.append(f"Player {i+1} (Random Fallback)")
+                else:
+                    print(f"Loading RL model from {model_path}")
+                    agent = RLAgentWrapper(model_path, self.env)
+                    self.agents.append(agent)
+                    self.player_names.append(f"Player {i+1} (RL Agent)")
             else:
+                # Human player.
                 self.agents.append(None)
-                # For human players, use provided name if any, else default.
                 if player_names is not None and i < len(player_names):
                     self.player_names.append(player_names[i])
                 else:
@@ -79,8 +138,8 @@ class SaboteurGUI:
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
         # Selected card and its index in the current hand.
-        self.selected_card: Card | None = None
-        self.selected_card_index: int | None = None
+        self.selected_card: Optional[Card] = None
+        self.selected_card_index: Optional[int] = None
 
         # Bind left-click for selection/placement and right-click for dragging.
         self.canvas.bind("<Button-1>", self.on_click)
@@ -394,30 +453,30 @@ class SaboteurGUI:
         current_player: int = self.env.current_player
         agent = self.agents[current_player]
         if agent is not None:
-            # Schedule the AI action after a short delay (e.g., 1000 ms).
             self.root.after(GUI_CONFIG['ai_delay'], self.auto_act)
 
     def auto_act(self) -> None:
         """
         Execute an AI action for the current player.
         Calls the agent's act() method, prints the chosen action, and updates the GUI.
-        After executing the action, check again if the next turn is an AI turn and schedule it.
+        Then schedules the next AI action if applicable.
         """
         if self.env.done:
             return
         current_player: int = self.env.current_player
         agent = self.agents[current_player]
         if agent is None:
-            return  # This should not happen if check_auto_act was called.
-        action: tuple[int, tuple[int, int], int] = agent.act(current_player)
+            return
+        action = agent.act(current_player)
         print(f"AI Player {current_player+1} action: {action}")
         obs, reward, done, _, info = self.env.step(action)
-        # Clear any selected card.
         self.selected_card = None
         self.selected_card_index = None
         self.draw()
-        # Immediately check if the next turn is also an AI turn.
         self.check_auto_act()
+
+    def run(self) -> None:
+        self.root.mainloop()
 
 
 if __name__ == "__main__":

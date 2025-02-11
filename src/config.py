@@ -29,26 +29,29 @@ GUI_CONFIG = {
 }
 
 CONFIG = {
-    'num_players': 2,
+    'num_players': 4,
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
-    "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
-    "AI_TYPES": ["human", "human"],
+    # "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
+    # "AI_TYPES": ["human", "RL-agent"],
+    "AI_TYPES": ["20250211_184700", "20250211_184700", "20250211_184700", "20250211_184700"],
     # "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
     # "AI_TYPES": ["random", "rule-based"],
 }
 
 # AI configuration.
 AI_CONFIG = {
-    'learning_rate': 0.001,  # Learning rate
+    'learning_rate': 0.003,  # Learning rate
     'gamma': 0.99,  # Discount factor
-    'timesteps': 35_000_000,  # Number of timesteps to train
-    'batch_size': 64,  # Batch size
-    'n_envs': 32,  # Number of parallel environments
+    'timesteps': 20_000_000,  # Number of timesteps to train
+    'batch_size': 512,  # Batch size
+    'n_envs': 24,  # Number of parallel environments
     'device': 'cpu', # Device to use for training ('cuda' or 'cpu')
     'n_eval_episodes': 3,  # Number of episodes to evaluate
-    'n_steps': 100*32,  # max. Number of steps per environment (must be multiple of n_envs)
+    'n_steps': 100*24,  # max. Number of steps per environment (must be multiple of n_envs)
     'log_interval': 1,  # Log interval
+
+    'dist_reward_scale': 0.0, # max intermediate reward
 
     # 'dqn_hidden_layers': (256, 256) # hidden layers in NN
     "final_reward_winner": 10,  # The winning player receives 4 points; subsequent players get one less each.

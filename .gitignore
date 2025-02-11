@@ -1,3 +1,14 @@
 **/__pycache__
 **.venv
-**training_runs
+training_runs/**
+# allow some models
+# first fully trained model: 20250211_184700
+!training_runs/20250211_184700
+!training_runs/20250211_184700/*
+!training_runs/20250211_184700/**
+
+!training_runs/20250211_184648
+!training_runs/20250211_184648/*
+!training_runs/20250211_184648/**
+# exclude checkpoints
+training_runs/*/checkpoints/*
