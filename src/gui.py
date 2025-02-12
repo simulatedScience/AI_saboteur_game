@@ -77,6 +77,13 @@ class SaboteurGUI:
         self.env.reset()
         self.root: tk.Tk = tk.Tk()
         self.root.title("Saboteur Card Game")
+        self.main_frame: tk.Frame = tk.Frame(self.root)
+        self.main_frame.grid(row=1, column=1)
+        # configure grid around main frame with weight 1
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_rowconfigure(2, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(2, weight=1)
 
         # Setup player names and agent types based on CONFIG["AI_TYPES"]
         config_ai_types: list[str] = CONFIG.get("AI_TYPES", [])
@@ -132,10 +139,16 @@ class SaboteurGUI:
         self.board_rows: int = 0
 
         # Set an initial canvas size.
-        self.canvas_width: int = 800
-        self.canvas_height: int = 600
-        self.canvas: tk.Canvas = tk.Canvas(self.root, width=self.canvas_width, height=self.canvas_height, bg='white')
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas_width: int = 11*GUI_CONFIG['card_width'] + 10*GUI_CONFIG['card_margin']
+        self.canvas_height: int = 7*GUI_CONFIG['card_height'] + 6*GUI_CONFIG['card_margin']
+        self.canvas: tk.Canvas = tk.Canvas(self.main_frame, width=self.canvas_width, height=self.canvas_height, bg='white')
+        # self.canvas.pack(fill=tk.BOTH, expand=True)
+        # self.canvas.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        self.canvas.grid(
+            row=0,
+            column=0,
+            columnspan=CONFIG['hand_size'] + 1,
+            sticky='nsew')
 
         # Selected card and its index in the current hand.
         self.selected_card: Optional[Card] = None
@@ -280,32 +293,45 @@ class SaboteurGUI:
         If the game is over, display a Play Again button.
         """
         if self.env.done:
+            # clear row 1 (hand, skip button)
+            for widget in self.main_frame.grid_slaves(row=1):
+                widget.grid_forget()
             center_x: float = self.canvas_width / 2
-            center_y: float = self.canvas_height - 75
+            center_y: float = self.canvas_height + GUI_CONFIG['card_margin'] + GUI_CONFIG['card_height']/2
             play_again_button: tk.Button = tk.Button(
-                self.canvas,
+                self.main_frame,
                 text="Play Again",
-                font=(GUI_CONFIG['font'], 24),
-                bg="green",
-                fg="white",
+                font=(GUI_CONFIG['font'], 24, 'bold'),
+                bg=GUI_CONFIG['color_play_again'],
+                fg=GUI_CONFIG['color_text_bright'],
+                activebackground=GUI_CONFIG['color_play_again_active'],
+                activeforeground=GUI_CONFIG['color_text_bright'],
+                relief="flat",
+                border=0,
                 command=self.play_again
             )
-            self.canvas.create_window(center_x, center_y, window=play_again_button)
+            # self.canvas.create_window(center_x, center_y, window=play_again_button)
+            play_again_button.grid(
+                row=1,
+                column=0,
+                columnspan=CONFIG['hand_size'] + 1,
+                sticky='nsew')
             return
 
         current_hand: list[Card] = self.env.player_hands[self.env.current_player]
         num_cards: int = len(current_hand)
         total_width: float = num_cards * (GUI_CONFIG['card_width'] + GUI_CONFIG['card_margin']) + GUI_CONFIG['card_margin']
         start_x: float = (self.canvas_width - total_width) / 2 + GUI_CONFIG['card_margin']
-        y: float = self.canvas_height - 150 + GUI_CONFIG['card_margin']
+        y: float = self.canvas_height + GUI_CONFIG['card_margin']
 
         for idx, card in enumerate(current_hand):
             card_canvas: tk.Canvas = draw_card(
                 card=card,
-                parent_widget=self.canvas,
+                parent_widget=self.main_frame,
                 click_callback=lambda event, c=card, i=idx: self.on_card_click(event, c, i)
             )
-            self.canvas.create_window(start_x, y, window=card_canvas, anchor='nw')
+            # self.canvas.create_window(start_x, y, window=card_canvas, anchor='nw')
+            card_canvas.grid(row=1, column=idx, sticky='n')
 
             if card.selected:
                 # Compute an offset so that the outline is flush and symmetric.
@@ -331,14 +357,22 @@ class SaboteurGUI:
         if self.env.done:
             return
         # Place the skip button at the bottom-right of the canvas.
-        btn = tk.Button(
-            self.canvas,
+        skip_button = tk.Button(
+            self.main_frame,
             text="Skip Turn",
-            font=(GUI_CONFIG['font'], 14),
-            bg="orange",
+            font=(GUI_CONFIG['font'], 14, 'bold'),
+            bg=GUI_CONFIG['color_skip'],
+            fg=GUI_CONFIG['color_text_bright'],
+            activebackground=GUI_CONFIG['color_skip_active'],
+            activeforeground=GUI_CONFIG['color_text_bright'],
+            relief="flat",
+            border=0,
             command=self.skip_turn
         )
-        self.canvas.create_window(self.canvas_width - 80, self.canvas_height - 75, window=btn)
+        center_x = self.canvas_width - 80
+        center_y = self.canvas_height + GUI_CONFIG['card_margin'] + GUI_CONFIG['card_height']/2
+        # self.canvas.create_window(center_x, center_y, window=skip_button)
+        skip_button.grid(row=1, column=CONFIG['hand_size'], sticky='nsew')
 
     def on_card_click(self, event: tk.Event, card: Card, index: int | None) -> None:
         """
@@ -436,6 +470,9 @@ class SaboteurGUI:
         # Reset board offsets if necessary.
         self.board_offset_x = 0
         self.board_offset_y = 0
+        # clear row 1 (hand, skip button, play again button)
+        for widget in self.main_frame.grid_slaves(row=1):
+            widget.grid_forget()
         self.draw()
         # Check for auto-action in the new game.
         self.check_auto_act()
