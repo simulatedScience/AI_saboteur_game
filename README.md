@@ -10,9 +10,9 @@ Different communication methods between agents can be implemented:
 
 ## Milestones
 
-1. implement path cards, dead ends, path card play, distance to gold measurement.
-2. implement basic GUI to test
-3. train early agents to play cards to reach gold. ("innocent miner agents")
+1. ✓ implement path cards, dead ends, path card play, distance to gold measurement.
+2. ✓ implement basic GUI to test
+3. ✓ train early agents to play cards to reach gold. ("innocent miner agents")
 4. add peek cards and non-equal rewards (first player gets rewarded more, then decreasing rewards in turn order) -> retrain agents with memory (LSTMs?) ("naive miner agents")
 5. add rockfall and saboteur roles, adjust rewards based on role -> train new saboteur agent, train new miner agent in env with saboteur
 6. build comparison tools -> compare saboteur, miner, naive miner, innocent miner agents' behaviours
@@ -20,11 +20,17 @@ Different communication methods between agents can be implemented:
 8. add chat & LLM agents -> retraining may be difficult due to larger agents -> training on HPC ...?
 
 ### non-ordered milestones:
-- make player-count adjustable
-- add dead-end path cards
-- make available cards easily adjustable. -> config file with each card type and number of cards.
+- ✓ make player-count adjustable
+- ✓ add dead-end path cards
+- ✓ make available cards easily adjustable. -> config file with each card type and number of cards.
 - make reward cards easily adjustable -> config table with reward amount, card count for each player count.
 - make saboteur/ miner distribution easily adjustable -> config table with miner card count, saboteur card count for each player count.
-- decide on observation and action spaces (a: for regular NN agents, b: for LLM agents)
+- ✓ decide on observation and action spaces (a: for regular NN agents, b: for LLM agents) -> see doc
+- plan and build policy analysis tools
 
-During development reevaluate the next steps based on observations. Adding complexity may not be necessary if very interesting behaviour is observed before.
+During development reevaluate the next steps based on observations. Adding complexity may not be necessary if very interesting behaviour is observed with earlier versions.
+
+### Additional TODOs:
+- improve doc:
+  - describe internal game state representations
+  - describe action masking
