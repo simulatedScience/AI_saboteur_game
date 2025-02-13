@@ -5,18 +5,20 @@ This version uses a vectorized environment (via make_vec_env) for parallelizatio
 which should greatly increase training speed (from ~60fps to >10000fps).
 TensorBoard logging is enabled and a new run folder is created for each training run.
 """
-
+# standard library imports
 import os
 from datetime import datetime
+import json
+# third party imports
 import gymnasium as gym
 from stable_baselines3.common.env_util import make_vec_env
 from sb3_contrib import MaskablePPO
 from sb3_contrib.common.maskable.callbacks import MaskableEvalCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
 from sb3_contrib.common.wrappers import ActionMasker
-
+# local imports
 from src.agents.mask_function import mask_func
-from src.agents.saboteur_discrete_wrapper import SaboteurDiscreteWrapper, STATE_SIZE, COORD_RES
+from src.saboteur_env import SaboteurEnv, STATE_SIZE, COORD_RES
 from src.config import AI_CONFIG, CONFIG
 
 def create_run_folder() -> str:
@@ -33,26 +35,26 @@ def create_run_folder() -> str:
 
 def save_training_info(folder: str) -> None:
     """
-    Save training configuration and hyperparameters into a markdown file.
+    Save training configuration and hyperparameters into a JSON file.
     
     Args:
         folder (str): The folder where the file will be saved.
     """
-    info_text = f"""# Training Information
-
-Run Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-Environment Config:
-{CONFIG}
-
-AI Config:
-{AI_CONFIG}
-
-State Dimension: {STATE_SIZE}
-Action Space: MultiDiscrete([hand_size={CONFIG["hand_size"]}, {COORD_RES}, {COORD_RES}, 2])
-"""
-    with open(os.path.join(folder, "training_info.md"), "w") as f:
-        f.write(info_text)
+    training_info = {
+        "Run Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Environment Config": CONFIG,
+        "AI Config": AI_CONFIG,
+        "State Dimension": STATE_SIZE,
+        "Action Space": {
+            "hand_size": CONFIG["hand_size"],
+            "coord_res_1": COORD_RES,
+            "coord_res_2": COORD_RES,
+            "actions": 2
+        }
+    }
+    
+    with open(os.path.join(folder, "training_info.json"), "w") as f:
+        json.dump(training_info, f, indent=4)
 
 def train() -> None:
     """
@@ -68,7 +70,7 @@ def train() -> None:
     
     # Create vectorized environment: each env is wrapped with ActionMasker.
     def make_env() -> gym.Env:
-        env = SaboteurDiscreteWrapper()
+        env = SaboteurEnv()
         env = ActionMasker(env, mask_func)
         return env
     

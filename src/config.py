@@ -37,8 +37,8 @@ CONFIG = {
     'hand_size': 6,
     'deck': 'src/assets/deck_standard.json',
     # "AI_TYPES": ["human", "rule-based", "rule-based", "rule-based"],
-    "AI_TYPES": ["RL-agent", "RL-agent", "RL-agent"],
-    # "AI_TYPES": ["20250211_184700", "20250211_184700", "20250211_184700", "20250211_184700"],
+    # "AI_TYPES": ["RL-agent", "RL-agent", "RL-agent"],
+    "AI_TYPES": ["20250212_002339", "20250212_002339", "20250212_002339", "20250212_002339"],
     # "AI_TYPES": ["rule-based", "rule-based", "rule-based", "rule-based"],
     # "AI_TYPES": ["random", "rule-based"],
 }
@@ -48,7 +48,7 @@ CONFIG['num_players'] = len(CONFIG['AI_TYPES'])
 AI_CONFIG = {
     'learning_rate': 0.003,  # Learning rate
     'gamma': 0.99,  # Discount factor
-    'timesteps': 50_000_000,  # Number of timesteps to train
+    'timesteps': 100_000_000,  # Number of timesteps to train
     'batch_size': 512,  # Batch size
     'n_envs': 24,  # Number of parallel environments
     'device': 'cpu', # Device to use for training ('cuda' or 'cpu')
@@ -56,8 +56,8 @@ AI_CONFIG = {
     'n_steps': 100*24,  # max. Number of steps per environment (must be multiple of n_envs)
     'log_interval': 1,  # Log interval
 
-    'dist_reward_scale': 1.0, # max intermediate reward
-
+    'dist_reward_scale': 0.0, # max intermediate reward
+    'mask_dropout_prob': 0.1, # mask dropout probability
     # 'dqn_hidden_layers': (256, 256) # hidden layers in NN
     "final_reward_winner": 10,  # The winning player receives 4 points; subsequent players get one less each.
 }

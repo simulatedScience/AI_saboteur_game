@@ -46,6 +46,16 @@ OPPOSITE_EDGE: dict[str, str] = {
     "right": "left"
 }
 
+MAX_BOARD_CARDS: int = 100
+CARD_FEATURES: int = 22
+BOARD_STATE_SIZE: int = MAX_BOARD_CARDS * CARD_FEATURES
+HAND_SIZE: int = CONFIG["hand_size"]
+HAND_STATE_SIZE: int = HAND_SIZE * CARD_FEATURES
+STATE_SIZE: int = BOARD_STATE_SIZE + HAND_STATE_SIZE
+COORD_LOW: float = -20.0 # minimum valid x-coordinate
+COORD_HIGH: float = 20.0 # maximum valid x-coordinate
+COORD_RES: int = 41 # 
+
 DEBUG: bool = False
 
 class SaboteurEnv(gym.Env):
@@ -80,14 +90,29 @@ class SaboteurEnv(gym.Env):
     def __init__(self, num_players: int | None = None) -> None:
         super().__init__()
         self.num_players: int = num_players if num_players is not None else CONFIG["num_players"]
+        # state variables
         self.board: dict[tuple[int, int], Card] = {}
         self.reachable_edges: set[tuple[int, int, str]] = set()
         self.valid_positions: set[tuple[int, int]] = set()
         self.valid_positions_map: dict[tuple[int, int], set[str]] = {}
         self.distance_to_goal: int = 8  # Initialize to maximum (8)
         self.start_position: tuple[int, int] = (0, 0)
-        self.action_space = spaces.Discrete(10)  # Dummy; actions are handled externally.
-        self.observation_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.int8)
+        # AI STate & Action space
+        self.observation_space = gym.spaces.Box(
+            low=-1.,
+            high=1.,
+            shape=(STATE_SIZE,),
+            dtype=np.float32
+        )
+        self.action_space = gym.spaces.MultiDiscrete(
+            [
+                HAND_SIZE + 1, # hand_size
+                COORD_RES, # discrete x-coordinates
+                COORD_RES, # discrete y-coordinates
+                2, # Orientation
+            ]
+        )
+
         self.done: bool = False
         self.info: dict[str, any] = {}
         self.consecutive_skips: int = 0
@@ -99,7 +124,7 @@ class SaboteurEnv(gym.Env):
 
         self.deck: list[Card] = load_deck(deck_config_path=CONFIG["deck"])
         self.player_hands: dict[int, list[Card]] = {
-            player: [self.deck.pop() for _ in range(CONFIG["hand_size"])]
+            player: [self.deck.pop() for _ in range(HAND_SIZE)]
             for player in range(self.num_players)
         }
 
@@ -197,7 +222,7 @@ class SaboteurEnv(gym.Env):
         self.last_valid_player = None
         self.deck = load_deck(deck_config_path=CONFIG["deck"])
         self.player_hands = {
-            player: [self.deck.pop() for _ in range(CONFIG["hand_size"])]
+            player: [self.deck.pop() for _ in range(HAND_SIZE)]
             for player in range(self.num_players)
         }
         return self._get_obs(), {}
@@ -347,64 +372,101 @@ class SaboteurEnv(gym.Env):
                 rewards[i] = 0
         return rewards
 
-    def step(self, action: tuple[int, tuple[int, int], int]) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
+    def _handle_skip_action(self) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
         """
-        Process an action.
+        Handle a skip action (card_index == -1).
         
-        The action is a tuple: (card_index, board position, orientation).
-        A card_index of -1 indicates a skip. Invalid actions yield -20.
-        On a valid move, an intermediate reward is given based on the reduction in distance-to-goal.
-        Final rewards are computed when the game ends.
+        Returns:
+            tuple: (observation, reward, done, truncated, info)
         """
-        card_index, pos, orientation = action
-
+        self.consecutive_skips += 1
+        self.current_player = (self.current_player + 1) % self.num_players
         reward: float = 0.0
+        if self.consecutive_skips >= self.num_players:
+            self.done = True
+            reward = self.compute_final_rewards(gold_reached=False)[self.current_player]
+            self.info["final_rewards"] = reward
+        return self._get_obs(), reward, self.done, False, self.info
 
-        if card_index == -1:
-            self.consecutive_skips += 1
-            self.current_player = (self.current_player + 1) % self.num_players
-            if self.consecutive_skips >= self.num_players:
-                self.done = True
-                reward = self.compute_final_rewards(gold_reached=False)[self.current_player]
-                self.info["final_rewards"] = reward
-            return self._get_obs(), 0.0, self.done, False, self.info
+    def _handle_invalid_card_index(self, card_index: int, current_hand: list[Card]) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
+        """
+        Handle an action with an invalid card index.
+        
+        Args:
+            card_index (int): The invalid card index.
+            current_hand (list[Card]): The current player's hand.
+        
+        Returns:
+            tuple: (observation, reward, done, truncated, info)
+        """
+        # print(f"Invalid card index: {card_index}")
+        reward: float = -20.0
+        self.current_player = (self.current_player + 1) % self.num_players
+        return self._get_obs(), reward, self.done, False, self.info
 
-        current_hand = self.player_hands[self.current_player]
-        if card_index < 0 or card_index >= len(current_hand):
-            print(f"Invalid card index: {card_index}")
-            reward = -20.0 # Invalid action
-            return self._get_obs(), reward, self.done, False, self.info
+    def _handle_invalid_placement(self, card_index: int, played_card: Card, old_distance: int, current_hand: list[Card]) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
+        """
+        Handle an invalid card placement by substituting a valid placement if available.
+        Applies a penalty for the invalid action and, if substitution succeeds, computes the intermediate reward.
+        
+        Args:
+            card_index (int): Index of the card in hand.
+            played_card (Card): The card that was attempted to be placed.
+            old_distance (int): Distance-to-goal before placement.
+            current_hand (list[Card]): The current player's hand.
+        
+        Returns:
+            tuple: (observation, reward, done, truncated, info)
+        """
+        # print(f"Invalid placement at {played_card.x, played_card.y}; substituting valid action.")
+        invalid_penalty: float = -20.0
+        valid_positions = self.get_valid_placements(played_card)
+        if valid_positions:
+            substitute_pos = valid_positions[0]
+            sub_success: bool = self.place_card(played_card, substitute_pos)
+            if sub_success:
+                self.consecutive_skips = 0
+                self.last_valid_player = self.current_player
+                del current_hand[card_index]
+                if self.deck:
+                    new_card: Card = self.deck.pop()
+                    current_hand.append(new_card)
+                new_distance: int = self.distance_to_goal
+                intermediate: float = (old_distance - new_distance) * AI_CONFIG["dist_reward_scale"] / max(self.distance_to_goal, 1)
+                reward: float = invalid_penalty + intermediate
+            else:
+                reward = invalid_penalty
+        else:
+            reward = invalid_penalty
+        self.current_player = (self.current_player + 1) % self.num_players
+        return self._get_obs(), reward, self.done, False, self.info
 
-        played_card = current_hand[card_index]
-        while played_card.rotation != orientation:
-            played_card.rotate()
-
-        # Record old distance before placement.
-        old_distance = self.distance_to_goal
-
-        success = self.place_card(played_card, pos)
-        if not success:
-            print(f"Invalid card placement at x={pos[0]}, y={pos[1]}")
-            reward = -20.0
-            return self._get_obs(), reward, self.done, False, self.info
-
+    def _handle_valid_placement(self, card_index: int, played_card: Card, old_distance: int, current_hand: list[Card]) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
+        """
+        Process a successful card placement.
+        
+        Removes the card from hand, draws a new one, computes the intermediate reward,
+        and updates the current player.
+        
+        Args:
+            card_index (int): The index of the placed card.
+            played_card (Card): The card that was successfully placed.
+            old_distance (int): Distance-to-goal before placement.
+            current_hand (list[Card]): The current player's hand.
+        
+        Returns:
+            tuple: (observation, reward, done, truncated, info)
+        """
         self.consecutive_skips = 0
         self.last_valid_player = self.current_player
-
         del current_hand[card_index]
         if self.deck:
-            new_card = self.deck.pop()
+            new_card: Card = self.deck.pop()
             current_hand.append(new_card)
-
-        # Compute intermediate reward based on the reduction in distance.
-        new_distance = self.distance_to_goal
-        if self.distance_to_goal <= 0:
-            self.distance_to_goal = 1
-        reward = (old_distance - new_distance) * AI_CONFIG["dist_reward_scale"] / self.distance_to_goal
-
-        # Game end conditions.
-        reached_gold = self.gold_reached()
-        all_hands_empty = all(len(hand) == 0 for hand in self.player_hands.values())
+        new_distance: int = self.distance_to_goal
+        reward: float = (old_distance - new_distance) * AI_CONFIG["dist_reward_scale"] / max(self.distance_to_goal, 1)
+        reached_gold: bool = self.gold_reached()
+        all_hands_empty: bool = all(len(hand) == 0 for hand in self.player_hands.values())
         if all_hands_empty or reached_gold:
             self.done = True
             reward = self.compute_final_rewards(reached_gold)[self.current_player]
@@ -412,18 +474,110 @@ class SaboteurEnv(gym.Env):
         else:
             self.done = False
             self.current_player = (self.current_player + 1) % self.num_players
-
-        if DEBUG:
-            self.render()
-            print("Intermediate reward:", reward)
-
         return self._get_obs(), reward, self.done, False, self.info
+
+    def step(self,
+            action: tuple[int, int, int, int],
+            ) -> tuple[np.ndarray, float, bool, bool, dict[str, any]]:
+        """
+        Process an action.
+        
+        The action is now a tuple: (card_index, x_index, y_index, orientation).
+            - If card_index == HAND_SIZE, then this is a skip action.
+            - Otherwise, the card selected is current_hand[card_index].
+            - The desired board position is computed as:
+                (COORD_LOW + x_index, COORD_LOW + y_index)
+            - Orientation is binary.
+          
+        If the placement is invalid, then with probability AI_CONFIG["mask_dropout_prob"],
+        a valid placement (from get_valid_placements) is substituted; otherwise, the invalid move is penalized.
+        
+        Args:
+            action (tuple[int, tuple[int, int], int]): (card_index, board position, orientation)
+        
+        Returns:
+            tuple: (observation, reward, done, truncated, info)
+        """
+        card_index, x_idx, y_idx, orientation = action
+
+        # Handle skip action:
+        if card_index == HAND_SIZE:
+            return self._handle_skip_action()
+
+        current_hand: list[Card] = self.player_hands[self.current_player]
+        if card_index < 0 or card_index >= len(current_hand):
+            # print(f"Invalid card index: {card_index}")
+            return self._handle_invalid_card_index(card_index, current_hand)
+
+        played_card: Card = current_hand[card_index]
+        # Adjust card orientation if needed
+        if played_card.rotation != orientation:
+            played_card.rotate()
+
+        # Compute desired placement from x_idx and y_idx (step size = 1)
+        pos: tuple[int, int] = (COORD_LOW + x_idx, COORD_LOW + y_idx)
+        old_distance: int = self.distance_to_goal
+
+        success: bool = self.place_card(played_card, pos)
+        if not success:
+            # print(f"Invalid placement of card at {pos} (card: {played_card})")
+            # With probability mask_dropout_prob, substitute a valid move.
+            if self.get_valid_placements(played_card) and random.random() < AI_CONFIG["mask_dropout_prob"]:
+                return self._handle_invalid_placement(card_index, played_card, old_distance, current_hand)
+            else:
+                # Otherwise, simply penalize the move.
+                penalty: float = -20.0
+                self.current_player = (self.current_player + 1) % self.num_players
+                return self._get_obs(), penalty, self.done, False, self.info
+        else:
+            return self._handle_valid_placement(card_index, played_card, old_distance, current_hand)
+
 
     def _get_obs(self) -> np.ndarray:
         """
-        Return a dummy observation.
+        Get the current observation for the active player.
         """
-        return np.array([0])
+        board_state = self._encode_board()
+        hand_state = self._encode_hand(self.current_player)
+        return np.concatenate([board_state, hand_state])
+
+    def _encode_board(self) -> np.ndarray:
+        cards = list(self.board.values())
+        cards.sort(key=lambda c: ((c.x if c.x is not None else 0), (c.y if c.y is not None else 0)))
+        encodings = []
+        for card in cards[:MAX_BOARD_CARDS]:
+            encodings.append(self._encode_card(card))
+        while len(encodings) < MAX_BOARD_CARDS:
+            encodings.append(np.zeros(CARD_FEATURES, dtype=np.float32))
+        return np.concatenate(encodings)
+        
+    def _encode_hand(self, player_index: int) -> np.ndarray:
+        hand = self.player_hands[player_index]
+        encodings = []
+        for card in hand:
+            encodings.append(self._encode_card(card))
+        while len(encodings) < HAND_SIZE:
+            encodings.append(np.zeros(CARD_FEATURES, dtype=np.float32))
+        return np.concatenate(encodings)
+        
+    def _encode_card(self, card: Card) -> np.ndarray:
+        x = float(card.x) if card.x is not None else 0.0
+        y = float(card.y) if card.y is not None else 0.0
+        pos = [x, y]
+        edges = []
+        for edge in ["top", "right", "bottom", "left"]:
+            etype = card.edges.get(edge, "wall")
+            if etype == "wall":
+                edges.extend([1, 0, 0])
+            else:
+                edges.extend([0, 1, 0])
+        possible_connections = [("left","right"), ("left","top"), ("left","bottom"),
+                                ("right","top"), ("right","bottom"), ("top","bottom")]
+        conn = [1 if pair in card.connections else 0 for pair in possible_connections]
+        hidden_goal = 1 if (card.type == "goal" and card.hidden) else 0
+        start_flag = 1 if card.type == "start" else 0
+        flags = [hidden_goal, start_flag]
+        return np.array(pos + edges + conn + flags, dtype=np.float32)
 
     def render(self, separate_cards: bool = False) -> None:
         """
